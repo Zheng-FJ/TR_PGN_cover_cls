@@ -102,7 +102,7 @@ class Decoder(nn.Module):
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
 
-    def forward(self, trg_seq, trg_mask, enc_output, src_mask, return_attns=False, cover=None):
+    def forward(self, trg_seq, trg_mask, enc_output, src_mask, score_matrix, return_attns=False, cover=None):
 
         dec_slf_attn_list, dec_enc_attn_list = [], []
 
@@ -122,7 +122,7 @@ class Decoder(nn.Module):
 
         for dec_layer in self.layer_stack:
             dec_output, dec_slf_attn, dec_enc_attn, dec_hidden_states, enc_dec_contexts = dec_layer(
-                dec_output, enc_output, slf_attn_mask=trg_mask, dec_enc_attn_mask=src_mask, cover=cover)
+                dec_output, enc_output, score_matrix, slf_attn_mask=trg_mask, dec_enc_attn_mask=src_mask, cover=cover)
             dec_slf_attn_list += [dec_slf_attn] if return_attns else []
             dec_enc_attn_list += [dec_enc_attn] if return_attns else []
         if return_attns:
@@ -305,11 +305,37 @@ class Transformer(nn.Module):
 
                 # 在这里加线性层，返回二维Logit
                 output_logit = self.classify_layer(enc_utt_output)
+                # print(output_logit.shape)
+                utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
+                utts_score[:-1] += output_logit[:,1]
+
+                max_n_words = enc_output.shape[1]
+                utt_idx = 0
+                prob_indices = []
+
+                for nums_words in article_lens:
+                    indices = []
+                    # print(nums_words)
+                    for num_words in nums_words:
+                        if num_words == 0:
+                            # print('0 words')
+                            continue
+                        indices += [utt_idx] * num_words
+                        utt_idx += 1
+                    indices += [-1] * (max_n_words - sum(nums_words))
+                    prob_indices.append(indices)
+                prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
+
+                '''构造分数矩阵'''
+                score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
+
+
             else:
                 output_logit = None
+                score_matrix = None
             
             dec_output, dec_slf_attn_list, dec_enc_attn_list, dec_hidden_states, enc_dec_contexts\
-                = self.decoder(trg_seq, trg_mask, enc_output, src_mask, return_attns=self.use_pointer, cover=cover)
+                = self.decoder(trg_seq, trg_mask, enc_output, src_mask, score_matrix, return_attns=self.use_pointer, cover=cover)
             tgt_emb = self.decoder.position_enc(self.decoder.trg_word_emb(trg_seq))
             p_gen = self.gen_prob(enc_dec_contexts, dec_hidden_states, tgt_emb) #[b, tgt, 1]
             p_copy = (1 - p_gen) #[b, tgt, 1]

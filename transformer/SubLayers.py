@@ -122,7 +122,7 @@ class MultiHeadAttention(nn.Module):
 
 
 
-    def forward(self, q, k, v, mask=None, cover=None):
+    def forward(self, q, k, v, score_matrix, mask=None, cover=None):
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
         sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
@@ -141,7 +141,7 @@ class MultiHeadAttention(nn.Module):
         if mask is not None:
             mask = mask.unsqueeze(1)   # For head axis broadcasting.
 
-        output, attn= self.attention(q, k, v, mask=mask, cover=cover)
+        output, attn= self.attention(q, k, v, mask=mask, cover=cover, score_matrix = score_matrix)
 
         # Transpose to move the head dimension back: b x lq x n x dv
         # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
@@ -152,6 +152,8 @@ class MultiHeadAttention(nn.Module):
         output_plus_residual = self.layer_norm(output_plus_residual)
 
         return output_plus_residual, attn, output
+
+
 
 
 

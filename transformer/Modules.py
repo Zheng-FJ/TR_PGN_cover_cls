@@ -13,7 +13,7 @@ class ScaledDotProductAttention(nn.Module):
         self.temperature = temperature
         self.dropout = nn.Dropout(attn_dropout)
 
-    def forward(self, q, k, v, mask=None, cover=None):
+    def forward(self, q, k, v, mask=None, cover=None, score_matrix=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         attn = torch.matmul(q / self.temperature, k.transpose(2, 3))
@@ -21,8 +21,13 @@ class ScaledDotProductAttention(nn.Module):
 
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
+        
+        if score_matrix is not None:
+            attn *= score_matrix[:, :, :attn.shape[2], :]            
+
 
         attn = self.dropout(F.softmax(attn, dim = -1))
+
 
 
         if cover is not None:
