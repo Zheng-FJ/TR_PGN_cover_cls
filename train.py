@@ -24,7 +24,7 @@ from transformer.Optim import ScheduledOptim
 
 __author__ = "Yu-Hsiang Huang"
 
-# with open('./logs/dudu_test_print/score_matrix.txt', 'w')as f_test:
+# with open('./logs/dudu_test_print_sche_smooth/score_matrix.txt', 'w')as f_test:
 #     f_test.truncate()
 
 def cross_entropy(input, target, ignore_index=-100, reduction='mean'):
@@ -169,7 +169,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         pred, classify_res, score_matrix = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
 
         # if dudu_i < 10:
-        #     with open('./logs/dudu_test_print/score_matrix.txt','a')as f:
+        #     with open('./logs/dudu_test_print_sche_smooth/score_matrix.txt','a')as f:
         #         f.write(str(score_matrix[0, 0, 0, :100]) + '\n')
 
         coverage = init_coverage
@@ -405,8 +405,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test_sche/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test_sche/")
+    parser.add_argument('-log', default="./logs/dudu_test_print_sche_smooth/")
+    parser.add_argument('-save_model', default="./save_model/dudu_test_print_sche_smooth/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)

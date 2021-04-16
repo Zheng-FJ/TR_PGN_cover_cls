@@ -303,6 +303,8 @@ class Transformer(nn.Module):
                 '''这里要取出每个句子的第一个表示，然后把一个batch里面的句子结合在一起'''
                 enc_utt_output = utts_process(enc_output, article_lens, utt_num)
 
+                '''在这里处理一下，问题表示跟每句话进行concat'''
+
                 # 在这里加线性层，返回二维Logit
                 output_logit = self.classify_layer(enc_utt_output)
                 # print(output_logit.shape)
@@ -328,6 +330,7 @@ class Transformer(nn.Module):
 
                 '''构造分数矩阵'''
                 score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
+                score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
 
 
             else:
