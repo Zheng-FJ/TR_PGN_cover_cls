@@ -366,5 +366,5 @@ class Transformer(nn.Module):
             
 
 
-        return final_dist, output_logit #[b, tgt, vocab]
+        return final_dist, output_logit, score_matrix #[b, tgt, vocab]
         # return seq_logit.view(-1, seq_logit.size(2))

@@ -24,17 +24,20 @@ from transformer.Optim import ScheduledOptim
 
 __author__ = "Yu-Hsiang Huang"
 
+# with open('./logs/dudu_test_print/score_matrix.txt', 'w')as f_test:
+#     f_test.truncate()
+
 def cross_entropy(input, target, ignore_index=-100, reduction='mean'):
     return F.nll_loss(torch.log(input + 1e-08), target, None, None, ignore_index, None, reduction)
 
 
 
-def cal_performance(pred, gold, classify_res, label, trg_pad_idx, smoothing=False, cover=None):
+def cal_performance(pred, gold, classify_res, label, trg_pad_idx, p, smoothing=False, cover=None):
     # print(gold.shape)
     ''' Apply label smoothing if needed '''
     non_pad_mask = gold.ne(trg_pad_idx)
     n_word = non_pad_mask.sum().item()
-    loss, loss_wo_cover, cover, bce_loss = cal_loss(pred, gold, classify_res, label, trg_pad_idx, smoothing=smoothing, cover=cover, n_word = n_word)
+    loss, loss_wo_cover, cover, bce_loss = cal_loss(pred, gold, classify_res, label, trg_pad_idx, p, smoothing=smoothing, cover=cover, n_word = n_word)
     pred = pred.view(-1, pred.size(2))
     pred = pred.max(1)[1]
     gold = gold.contiguous().view(-1)
@@ -49,7 +52,7 @@ def cal_performance(pred, gold, classify_res, label, trg_pad_idx, smoothing=Fals
     return loss, loss_wo_cover, cover, n_correct, n_word, bce_loss
 
 
-def cal_loss(preds, golds, classify_res, label, trg_pad_idx, smoothing=False, cover=None, n_word = None):
+def cal_loss(preds, golds, classify_res, label, trg_pad_idx, p, smoothing=False, cover=None, n_word = None):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
     if smoothing:
         eps = 0.1
@@ -79,14 +82,15 @@ def cal_loss(preds, golds, classify_res, label, trg_pad_idx, smoothing=False, co
         else:
             bce_loss = 0.
 
-
+        Lambda = 1 - (1 / (1 + math.exp(-10 * p)))
+        # print(Lambda)
         #print("loss: ",loss)
         if cover is not None:
             final_loss = loss + 0.1 * cover
         else:
             final_loss = loss
 
-        final_loss = torch.sum(final_loss) + 0.5 * bce_loss
+        final_loss = torch.sum(final_loss) + Lambda * bce_loss
 
         loss = torch.sum(loss)
 
@@ -96,7 +100,7 @@ def cal_loss(preds, golds, classify_res, label, trg_pad_idx, smoothing=False, co
 
 
 
-    return final_loss, loss, cover, 0.5 * bce_loss
+    return final_loss, loss, cover, Lambda * bce_loss
 
 
 def patch_src(src, pad_idx):
@@ -110,12 +114,13 @@ def patch_trg(trg, pad_idx):
     return trg, gold
 
 
-def train_epoch(model, training_data, optimizer, opt, smoothing):
+def train_epoch(model, training_data, optimizer, opt, smoothing, p):
     ''' Epoch operation in training phase'''
 
     model.train()
     total_loss, total_loss_wo_cover, total_cover, total_bce_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0
     step = 0
+    # dudu_i = 0
     # vocab = Vocab(opt.vocab_path, opt.vocab_size)
 
     desc = '  - (Training)   '
@@ -161,8 +166,11 @@ def train_epoch(model, training_data, optimizer, opt, smoothing):
         # forward
         optimizer.zero_grad()
 
-        pred, classify_res = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
-        # print(init_coverage)
+        pred, classify_res, score_matrix = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+
+        # if dudu_i < 10:
+        #     with open('./logs/dudu_test_print/score_matrix.txt','a')as f:
+        #         f.write(str(score_matrix[0, 0, 0, :100]) + '\n')
 
         coverage = init_coverage
         if coverage is not None:
@@ -177,7 +185,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing):
 
         # backward and update parameters
         loss, loss_wo_cover, cover, n_correct, n_word, bce_loss = cal_performance(
-            pred, gold, classify_res, label, opt.pad_idx, smoothing=smoothing, cover=coverage)
+            pred, gold, classify_res, label, opt.pad_idx, p, smoothing=smoothing, cover=coverage)
         loss.backward()
         # bce_loss.backward(retain_graph=True)
         #print(loss)
@@ -190,6 +198,12 @@ def train_epoch(model, training_data, optimizer, opt, smoothing):
         optimizer.step_and_update_lr()
 
         # note keeping
+        # dudu_i += 1
+        if opt.use_sche:
+            if p <= 1.0:
+                p += 1/50000
+        else:
+            p = 0.0
         step += 1
         n_word_total += n_word
         n_word_correct += n_correct
@@ -212,10 +226,10 @@ def train_epoch(model, training_data, optimizer, opt, smoothing):
         cover_per_batch = None
     bce_loss_per_batch = total_bce_loss/step
     accuracy = n_word_correct/n_word_total
-    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, accuracy
+    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, accuracy, p
 
 
-def eval_epoch(model, validation_data, opt):
+def eval_epoch(model, validation_data, opt, p):
     ''' Epoch operation in evaluation phase '''
 
     model.eval()
@@ -257,7 +271,7 @@ def eval_epoch(model, validation_data, opt):
                 label = None
 
             # forward
-            pred, classify_res = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+            pred, classify_res, _ = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
 
             #pred = pred.view(-1, pred.size(2))
             #gold = gold.contiguous().view(-1)
@@ -267,7 +281,7 @@ def eval_epoch(model, validation_data, opt):
                 coverage = torch.mean(coverage, dim=-1)
 
             loss, loss_wo_cover, cover, n_correct, n_word, bce_loss = cal_performance(
-                pred, gold, classify_res, label, opt.pad_idx, smoothing=False, cover = coverage)
+                pred, gold, classify_res, label, opt.pad_idx, p, smoothing=False, cover = coverage)
 
             # note keeping
             step += 1
@@ -306,8 +320,8 @@ def train(model, training_data, validation_data, optimizer, opt):
             log_train_file, log_valid_file))
 
         with open(log_train_file, 'w') as log_tf, open(log_valid_file, 'w') as log_vf:
-            log_tf.write('epoch,loss,loss_wo_cover,cover,ppl,accuracy\n')
-            log_vf.write('epoch,loss,loss_wo_cover,cover,ppl,accuracy\n')
+            log_tf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
+            log_vf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
 
     def print_performances(header, loss, loss_wo_cover, cover, bce_loss, accu, start_time):
         #print("loss_wo_cover: ",loss_wo_cover)
@@ -319,16 +333,19 @@ def train(model, training_data, validation_data, optimizer, opt):
 
     # valid_accus = []
     valid_wo_cover_losses = []
+    p = 0
     for epoch_i in range(opt.epoch):
         print('[ Epoch', epoch_i, ']')
+        with open('./logs/dudu_test_print/score_matrix.txt', 'a')as f:
+            f.write('[ Epoch ' +  str(epoch_i) + ' ]' + '\n')
 
         start = time.time()
-        train_loss, train_loss_wo_cover, train_cover, train_bce_loss, train_accu = train_epoch(
-            model, training_data, optimizer, opt, smoothing=opt.label_smoothing)
+        train_loss, train_loss_wo_cover, train_cover, train_bce_loss, train_accu, p = train_epoch(
+            model, training_data, optimizer, opt, smoothing=opt.label_smoothing, p = p)
         print_performances('Training', train_loss, train_loss_wo_cover, train_cover,train_bce_loss, train_accu, start)
 
         start = time.time()
-        valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_accu = eval_epoch(model, validation_data, opt)
+        valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_accu = eval_epoch(model, validation_data, opt, p)
         print_performances('Validation', valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_accu, start)
 
         valid_wo_cover_losses += [valid_loss_wo_cover]
@@ -388,8 +405,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test/")
+    parser.add_argument('-log', default="./logs/dudu_test_sche/")
+    parser.add_argument('-save_model', default="./save_model/dudu_test_sche/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -408,6 +425,8 @@ def main():
     parser.add_argument('-label_smoothing', action='store_true')
     parser.add_argument('-test_mode', action='store_true')
     parser.add_argument('-use_cls_layers', action='store_true')
+    parser.add_argument('-use_sche', action='store_true')
+
 
     parser.add_argument('-max_article_len', type=int, default=300)
     parser.add_argument('-max_title_len', type=int, default=50)
