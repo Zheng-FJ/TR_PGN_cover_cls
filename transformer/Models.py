@@ -288,6 +288,8 @@ class Transformer(nn.Module):
         self.use_cls_layers = use_cls_layers
         if self.use_cls_layers:
             self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+            # self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
 
@@ -303,11 +305,21 @@ class Transformer(nn.Module):
                 '''这里要取出每个句子的第一个表示，然后把一个batch里面的句子结合在一起'''
                 enc_utt_output = utts_process(enc_output, article_lens, utt_num)
 
-                '''在这里处理一下，问题表示跟每句话进行concat'''
+                ''' Q_based'''
+                enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
+                enc_utt_output = list(enc_utt_output)
+                for i in range(len(enc_utt_output)):
+                    q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
+                    enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
+                enc_utt_output = tuple(enc_utt_output)
+                enc_utt_output = torch.cat(enc_utt_output, dim = 0)
+
 
                 # 在这里加线性层，返回二维Logit
                 output_logit = self.classify_layer(enc_utt_output)
                 # print(output_logit.shape)
+
+                ''' score_matrix '''
                 utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
                 utts_score[:-1] += output_logit[:,1]
 
@@ -331,7 +343,7 @@ class Transformer(nn.Module):
                 '''构造分数矩阵'''
                 score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
                 score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
-
+                # score_matrix = None
 
             else:
                 output_logit = None

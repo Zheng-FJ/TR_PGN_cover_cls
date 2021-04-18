@@ -45,11 +45,11 @@ class Translator(nn.Module):
 
 
 
-    def _model_decode(self, trg_seq, enc_output, src_mask, src_seq_with_oov, oov_zero):
+    def _model_decode(self, trg_seq, enc_output, src_mask, score_matrix, src_seq_with_oov, oov_zero):
         trg_mask = get_subsequent_mask(trg_seq)
 
         dec_output, dec_slf_attn_list, dec_enc_attn_list, dec_hidden_states, enc_dec_contexts\
-            = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask, return_attns=self.use_pointer)
+            = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask, score_matrix, return_attns=self.use_pointer)
         vocab_dist = F.softmax(self.model.trg_word_prj(dec_output), dim=-1)
         if self.use_pointer:
             tgt_emb = self.decoder_pos_emb(self.decoder_word_emb(self.init_seq))
@@ -107,12 +107,50 @@ class Translator(nn.Module):
 
         if self.use_cls_layers and article_lens is not None and utt_num is not None:
             enc_utt_output = self._utts_process(enc_output, article_lens, utt_num)
+            ''' Q_based'''
+            enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
+            enc_utt_output = list(enc_utt_output)
+            for i in range(len(enc_utt_output)):
+                q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
+                enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
+            enc_utt_output = tuple(enc_utt_output)
+            enc_utt_output = torch.cat(enc_utt_output, dim = 0)
+
+
             output_logit = self.model.classify_layer(enc_utt_output)
             predicted_label = torch.argmax(output_logit, dim = -1)
+
+            ''' score_matrix '''
+            utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
+            utts_score[:-1] += output_logit[:,1]
+
+            max_n_words = enc_output.shape[1]
+            utt_idx = 0
+            prob_indices = []
+
+            for nums_words in article_lens:
+                indices = []
+                # print(nums_words)
+                for num_words in nums_words:
+                    if num_words == 0:
+                        # print('0 words')
+                        continue
+                    indices += [utt_idx] * num_words
+                    utt_idx += 1
+                indices += [-1] * (max_n_words - sum(nums_words))
+                prob_indices.append(indices)
+            prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
+
+            '''构造分数矩阵'''
+            score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
+            score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
+            # score_matrix =None
+
         else:
             predicted_label = None
+            score_matrix = None
         
-        final_dist = self._model_decode(self.init_seq, enc_output, src_mask, src_seq_with_oov, oov_zero)
+        final_dist = self._model_decode(self.init_seq, enc_output, src_mask, score_matrix, src_seq_with_oov, oov_zero)
 
         best_k_probs, best_k_idx = final_dist[:, -1, :].topk(beam_size)
 
@@ -123,7 +161,7 @@ class Translator(nn.Module):
         enc_output = enc_output.repeat(beam_size, 1, 1)
 
 
-        return enc_output, gen_seq, scores, predicted_label
+        return enc_output, gen_seq, scores, predicted_label, score_matrix
 
 
 
@@ -166,7 +204,7 @@ class Translator(nn.Module):
 
         with torch.no_grad():
             src_mask = get_pad_mask(src_seq, src_pad_idx)
-            enc_output, gen_seq, scores, predicted_label = self._get_init_state(src_seq, src_mask, src_seq_with_oov_extend, oov_zero, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3, article_lens=article_lens, utt_num=utt_num)
+            enc_output, gen_seq, scores, predicted_label, score_matrix = self._get_init_state(src_seq, src_mask, src_seq_with_oov_extend, oov_zero, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3, article_lens=article_lens, utt_num=utt_num)
             #print("init_scores: ",scores)
 
             ans_idx = 0   # default
@@ -178,7 +216,7 @@ class Translator(nn.Module):
                     [token if token < self.vocab_size else self.unk_idx for token in line]
                     for line in current_tokens_idx]
                 current_tokens_idx = torch.tensor(current_tokens_idx, dtype=torch.long).cuda()
-                final_dist = self._model_decode(current_tokens_idx[:, :step], enc_output, src_mask, src_seq_with_oov_extend, oov_zero)
+                final_dist = self._model_decode(current_tokens_idx[:, :step], enc_output, src_mask, score_matrix, src_seq_with_oov_extend, oov_zero)
 
                 gen_seq, scores = self._get_the_best_score_and_idx(gen_seq, final_dist, scores, step)
                 #print("scores: ",scores)
