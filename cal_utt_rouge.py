@@ -14,7 +14,7 @@ test_file = os.path.join(file_path, 'test.csv')
 valid_file = os.path.join(file_path, 'valid.csv')
 rouge = Rouge()
 
-output_file = './rouge_result.json'
+output_file = './rouge_result_topk.json'
 
 labels = collections.defaultdict(list)
 
@@ -48,9 +48,21 @@ for file_name in [valid_file, test_file, train_file]:
         for utt in cov:
             refs.append(rep)
         r = rouge.get_scores(utts, refs)
+        r_l_f = []
+        for line in r:
+            r_l_f.append(line['rouge-l']['f'])
+        r_l_f.sort(reverse=True)
+
+        if len(r) <= 4:
+            k = 0
+        else:
+            k = len(r) // 4
+
+        th = r_l_f[k]
+
         for line in r:
             f_score = line['rouge-l']['f']
-            if f_score < 0.12:
+            if f_score < th or f_score < 0.1:
                 labels[qid].append(0)
             else:
                 labels[qid].append(1)

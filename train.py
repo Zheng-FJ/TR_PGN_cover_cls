@@ -8,6 +8,9 @@ import os
 import time
 from tqdm import tqdm
 import random
+# import numpy as np
+# import seaborn as sns
+# import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -120,6 +123,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
     model.train()
     total_loss, total_loss_wo_cover, total_cover, total_bce_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0
     step = 0
+    # total_attn = [torch.zeros([15, 8, 50, 300], dtype=torch.float32).cuda()] * 6
     # dudu_i = 0
     # vocab = Vocab(opt.vocab_path, opt.vocab_size)
 
@@ -133,12 +137,13 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         #print(len(model_inputs))
         src_seq = model_inputs[0]
         trg_seq, gold = model_inputs[6], model_inputs[8]
-        src_seq_with_oov = model_inputs[2]
-        oov_zeros = model_inputs[3]
+        # trg_seq, gold = model_inputs[2], model_inputs[4]
+        src_seq_with_oov = model_inputs[2] if opt.use_pointer else None
+        oov_zeros = model_inputs[3] if opt.use_pointer else None
         attn_mask1 = None
-        attn_mask2 = model_inputs[9]
+        attn_mask2 = model_inputs[9] if opt.use_user_mask else None
         attn_mask3 = None
-        init_coverage = model_inputs[5]
+        init_coverage = model_inputs[5] if opt.use_coverage else None
         
         if opt.use_cls_layers:
             article_lens = model_inputs[11]
@@ -162,11 +167,26 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
             article_lens = None
             max_art_len = None
             utt_num  = None
+            classify_res = None
+            label = None
 
         # forward
         optimizer.zero_grad()
 
-        pred, classify_res, score_matrix = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+        pred, classify_res = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+        # pred = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+
+        # for i in range(len(dec_enc_attn_list)):
+        #     if dec_enc_attn_list[i].shape[0] < 15:
+        #         tmp = torch.zeros([15-dec_enc_attn_list[i].shape[0], 8, dec_enc_attn_list[i].shape[2], dec_enc_attn_list[i].shape[3]], dtype=torch.float32).cuda()
+        #         dec_enc_attn_list[i] = torch.cat((dec_enc_attn_list[i], tmp),dim = 0)
+        #     if dec_enc_attn_list[i].shape[2] < 50:
+        #         tmp = torch.zeros([15, 8, 50-dec_enc_attn_list[i].shape[2], dec_enc_attn_list[i].shape[3]], dtype=torch.float32).cuda()
+        #         dec_enc_attn_list[i] = torch.cat((dec_enc_attn_list[i], tmp),dim = 2)
+        #     if dec_enc_attn_list[i].shape[3] < 300:
+        #         tmp = torch.zeros([15, 8, 50, 300-dec_enc_attn_list[i].shape[3]], dtype=torch.float32).cuda()
+        #         dec_enc_attn_list[i] = torch.cat((dec_enc_attn_list[i], tmp),dim = 3)
+        #     total_attn[i] += dec_enc_attn_list[i]
 
         # if dudu_i < 10:
         #     with open('./logs/dudu_test_print_sche_smooth/score_matrix.txt','a')as f:
@@ -246,22 +266,23 @@ def eval_epoch(model, validation_data, opt, p):
                                         use_utter_trunc=opt.use_utter_trunc, use_user_mask=opt.use_user_mask, use_turns_mask=opt.use_turns_mask)
             src_seq = model_inputs[0]
             trg_seq, gold = model_inputs[6], model_inputs[8]
-            src_seq_with_oov = model_inputs[2]
-            oov_zeros = model_inputs[3]
+            # trg_seq, gold = model_inputs[2], model_inputs[4]
+            src_seq_with_oov = model_inputs[2] if opt.use_pointer else None
+            oov_zeros = model_inputs[3] if opt.use_pointer else None
             attn_mask1 = None
-            attn_mask2 = model_inputs[9]
+            attn_mask2 = model_inputs[9] if opt.use_user_mask else None
             attn_mask3 = None
-            init_coverage = model_inputs[5]
-            article_lens = model_inputs[11]
-            max_art_len = model_inputs[12]
-            utt_num = model_inputs[13]
+            init_coverage = model_inputs[5] if opt.use_coverage else None
 
             if opt.use_cls_layers:
                 label = model_inputs[10]
+                article_lens = model_inputs[11]
+                max_art_len = model_inputs[12]
+                utt_num = model_inputs[13]
+
                 total_utt_num = torch.sum(utt_num)
                 sz = label.shape[0]
                 tmp = []
-                # label_per_batch = torch.zeros([total_utt_num], dtype=torch.long).cuda()
                 for i in range(sz):
                     tmp.append(label[i, :utt_num[i]])
                 tmp = tuple(tmp)
@@ -269,9 +290,16 @@ def eval_epoch(model, validation_data, opt, p):
                 label = label_per_batch
             else:
                 label = None
+                article_lens = None
+                max_art_len = None
+                utt_num = None
+                classify_res = None
+                label = None
+
 
             # forward
-            pred, classify_res, _ = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+            pred, classify_res = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
+            # pred = model(src_seq, trg_seq, src_seq_with_oov, oov_zeros, attn_mask1, attn_mask2, attn_mask3, init_coverage, article_lens, utt_num)
 
             #pred = pred.view(-1, pred.size(2))
             #gold = gold.contiguous().view(-1)
@@ -280,8 +308,10 @@ def eval_epoch(model, validation_data, opt, p):
             if coverage is not None:
                 coverage = torch.mean(coverage, dim=-1)
 
+
             loss, loss_wo_cover, cover, n_correct, n_word, bce_loss = cal_performance(
                 pred, gold, classify_res, label, opt.pad_idx, p, smoothing=False, cover = coverage)
+
 
             # note keeping
             step += 1
@@ -318,7 +348,6 @@ def train(model, training_data, validation_data, optimizer, opt):
 
         print('[Info] Training performance will be written to file: {} and {}'.format(
             log_train_file, log_valid_file))
-
         with open(log_train_file, 'w') as log_tf, open(log_valid_file, 'w') as log_vf:
             log_tf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
             log_vf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
@@ -334,10 +363,11 @@ def train(model, training_data, validation_data, optimizer, opt):
     # valid_accus = []
     valid_wo_cover_losses = []
     p = 0
+    # sns.set()
     for epoch_i in range(opt.epoch):
         print('[ Epoch', epoch_i, ']')
-        with open('./logs/dudu_test_print/score_matrix.txt', 'a')as f:
-            f.write('[ Epoch ' +  str(epoch_i) + ' ]' + '\n')
+        # with open('./logs/dudu_test_print/score_matrix.txt', 'a')as f:
+        #     f.write('[ Epoch ' +  str(epoch_i) + ' ]' + '\n')
 
         start = time.time()
         train_loss, train_loss_wo_cover, train_cover, train_bce_loss, train_accu, p = train_epoch(
@@ -358,7 +388,9 @@ def train(model, training_data, validation_data, optimizer, opt):
                 model_name = opt.save_model + '_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
                 torch.save(checkpoint, model_name)
             elif opt.save_mode == 'best':
-                model_name = opt.save_model + 'save_best.chkpt'
+                if epoch_i > 0 and os.path.exists(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1)):
+                    os.remove(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1))
+                model_name = opt.save_model + 'save_best_{}.chkpt'.format(epoch_i)
                 # if valid_loss <= min(valid_losses):
                 if valid_loss_wo_cover <= min(valid_wo_cover_losses):
                     torch.save(checkpoint, model_name)
@@ -372,6 +404,37 @@ def train(model, training_data, validation_data, optimizer, opt):
                 log_vf.write('{epoch},{loss: 8.5f},{loss_wo_cover: 8.5f},{cover},{bce_loss},{ppl: 8.5f},{accu:3.3f}\n'.format(
                     epoch=epoch_i, loss=valid_loss,loss_wo_cover=valid_loss_wo_cover,cover=valid_cover,bce_loss=valid_bce_loss,
                     ppl=math.exp(min(valid_loss, 100)), accu=100*valid_accu))
+        
+        '''画attention热力图'''
+        # if epoch_i == 0 or epoch_i == 4 or epoch_i == 9 or epoch_i == 15 or epoch_i == 20 or epoch_i == 22:
+        #     attn = torch.mean(total_attn[-1], dim = 0)
+        #     attn = attn.detach().cpu().numpy()
+
+        #     plt.subplot(221)
+        #     a1 = sns.heatmap(attn[0])
+        #     plt.subplot(222)
+        #     a2 = sns.heatmap(attn[1])
+        #     plt.subplot(223)
+        #     a3 = sns.heatmap(attn[2])
+        #     plt.subplot(224)
+        #     a4 = sns.heatmap(attn[3])
+        #     plt.savefig('./heatmaps/epoch_{epoch}_head_{head}.jpg'.format(epoch = epoch_i, head = 1234))
+        #     plt.close()
+        #     plt.subplot(221)
+        #     a5 = sns.heatmap(attn[4])
+        #     plt.subplot(222)
+        #     a6 = sns.heatmap(attn[5])
+        #     plt.subplot(223)
+        #     a7 = sns.heatmap(attn[6])
+        #     plt.subplot(224)
+        #     a8 = sns.heatmap(attn[7])
+        #     plt.savefig('./heatmaps/epoch_{epoch}_head_{head}.jpg'.format(epoch = epoch_i, head = 5678))
+        #     plt.close()
+
+
+
+
+
 
 def main():
     ''' 
@@ -405,8 +468,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test_print_sche_smooth/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test_print_sche_smooth/")
+    parser.add_argument('-log', default="./logs/resume_test/")
+    parser.add_argument('-save_model', default="./save_model/resume_test/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -416,7 +479,8 @@ def main():
 
 
 
-    parser.add_argument('-use_pointer', type=bool, default=True)
+    # parser.add_argument('-use_pointer', type=bool, default=False)
+    parser.add_argument('-use_pointer', action="store_true")
     parser.add_argument("-use_coverage", action="store_true")
     parser.add_argument("-use_utter_trunc", action="store_true")
     parser.add_argument("-use_user_mask", action="store_true")
@@ -484,7 +548,6 @@ def main():
     optimizer = ScheduledOptim(
         optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
         10.0, opt.d_model, opt.n_warmup_steps)
-
     train(transformer, training_data, validation_data, optimizer, opt)
 
 

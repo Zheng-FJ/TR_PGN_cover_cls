@@ -556,6 +556,9 @@ def covert_loader_to_dataset(example_loader):
     else:
         dataset = TensorDataset(all_encoder_input,all_encoder_mask,all_decoder_input,all_decoder_mask, \
                                 all_decoder_target,all_encoder_input_with_oov,all_decoder_target_with_oov,all_oov_len)
+        '''无pointer版本'''
+        # dataset = TensorDataset(all_encoder_input,all_encoder_mask,all_decoder_input,all_decoder_mask, all_decoder_target)
+
 
     return dataset
 
@@ -835,7 +838,10 @@ def from_batch_get_model_input(batch, hidden_dim, use_pointer=True, use_coverage
                     all_decoder_input,
                     all_decoder_mask,
                     all_decoder_target]
-        model_input = [t.cuda() if t is not None else None for t in model_input]
+
+        # ''' 无pointer版本'''
+        # model_input = [all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask, all_decoder_target]
+        # model_input = [t.cuda() if t is not None else None for t in model_input]
     return model_input
 
 def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_coverage=True, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False, inference=False):

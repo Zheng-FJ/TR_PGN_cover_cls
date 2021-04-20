@@ -283,12 +283,13 @@ class Transformer(nn.Module):
         if emb_src_trg_weight_sharing:
             self.encoder.src_word_emb.weight = self.decoder.trg_word_emb.weight
 
-        self.gen_prob = GeneraProb(d_model, dropout)
+        if self.use_pointer:
+            self.gen_prob = GeneraProb(d_model, dropout)
 
         self.use_cls_layers = use_cls_layers
         if self.use_cls_layers:
-            self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
-            # self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+            # self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+            self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
 
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
@@ -357,7 +358,7 @@ class Transformer(nn.Module):
 
         else:
             enc_output = self.encoder(src_seq, src_mask, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3)
-            dec_output = self.decoder(trg_seq, trg_mask, enc_output, src_mask, cover=cover)
+            dec_output = self.decoder(trg_seq, trg_mask, enc_output, src_mask, score_matrix=None, cover=cover)
 
         vocab_logit = self.trg_word_prj(dec_output) * self.x_logit_scale
         vocab_dist = torch.softmax(vocab_logit, dim=-1)
@@ -380,6 +381,8 @@ class Transformer(nn.Module):
             final_dist = vocab_dist
             
 
-
-        return final_dist, output_logit, score_matrix #[b, tgt, vocab]
+        if self.use_pointer:
+            return final_dist, output_logit #[b, tgt, vocab]
+        else:
+            return final_dist
         # return seq_logit.view(-1, seq_logit.size(2))
