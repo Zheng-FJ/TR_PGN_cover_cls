@@ -388,9 +388,9 @@ def train(model, training_data, validation_data, optimizer, opt):
                 model_name = opt.save_model + '_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
                 torch.save(checkpoint, model_name)
             elif opt.save_mode == 'best':
-                if epoch_i > 0 and os.path.exists(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1)):
-                    os.remove(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1))
-                model_name = opt.save_model + 'save_best_{}.chkpt'.format(epoch_i)
+                # if epoch_i > 0 and os.path.exists(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1)):
+                #     os.remove(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1))
+                model_name = opt.save_model + 'save_best.chkpt'
                 # if valid_loss <= min(valid_losses):
                 if valid_loss_wo_cover <= min(valid_wo_cover_losses):
                     torch.save(checkpoint, model_name)
@@ -446,7 +446,7 @@ def main():
 
     parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
     parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
@@ -468,8 +468,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/resume_test/")
-    parser.add_argument('-save_model', default="./save_model/resume_test/")
+    parser.add_argument('-log', default="./logs/dudu_test_sche_score_q_topk/")
+    parser.add_argument('-save_model', default="./save_model/dudu_test_sche_score_q_topk/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -490,6 +490,9 @@ def main():
     parser.add_argument('-test_mode', action='store_true')
     parser.add_argument('-use_cls_layers', action='store_true')
     parser.add_argument('-use_sche', action='store_true')
+    parser.add_argument('-use_score_matrix', action='store_true')
+    parser.add_argument('-q_based', action='store_true')
+
 
 
     parser.add_argument('-max_article_len', type=int, default=300)
@@ -538,7 +541,9 @@ def main():
         dropout=opt.dropout,
         n_position=opt.max_article_len,
         use_pointer=opt.use_pointer,
-        use_cls_layers=opt.use_cls_layers
+        use_cls_layers=opt.use_cls_layers,
+        use_score_matrix=opt.use_score_matrix,
+        q_based=opt.q_based
         ).to(device)
 
     for name, parameters in transformer.named_parameters():

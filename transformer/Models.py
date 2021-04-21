@@ -244,7 +244,7 @@ class Transformer(nn.Module):
             d_word_vec=512, d_model=512, d_inner=2048,
             n_layers=6, n_head=8, d_k=64, d_v=64, dropout=0.1, n_position=200,
             trg_emb_prj_weight_sharing=True, emb_src_trg_weight_sharing=True,
-            use_pointer=False, use_cls_layers=False):
+            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False):
 
         super().__init__()
 
@@ -285,11 +285,17 @@ class Transformer(nn.Module):
 
         if self.use_pointer:
             self.gen_prob = GeneraProb(d_model, dropout)
+        
+        self.use_score_matrix = use_score_matrix
+        self.q_based = q_based
 
         self.use_cls_layers = use_cls_layers
         if self.use_cls_layers:
-            # self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
-            self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+            if self.q_based:
+                self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+            else:
+                self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+
 
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
@@ -307,13 +313,14 @@ class Transformer(nn.Module):
                 enc_utt_output = utts_process(enc_output, article_lens, utt_num)
 
                 ''' Q_based'''
-                enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
-                enc_utt_output = list(enc_utt_output)
-                for i in range(len(enc_utt_output)):
-                    q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
-                    enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
-                enc_utt_output = tuple(enc_utt_output)
-                enc_utt_output = torch.cat(enc_utt_output, dim = 0)
+                if self.q_based:
+                    enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
+                    enc_utt_output = list(enc_utt_output)
+                    for i in range(len(enc_utt_output)):
+                        q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
+                        enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
+                    enc_utt_output = tuple(enc_utt_output)
+                    enc_utt_output = torch.cat(enc_utt_output, dim = 0)
 
 
                 # 在这里加线性层，返回二维Logit
@@ -321,30 +328,32 @@ class Transformer(nn.Module):
                 # print(output_logit.shape)
 
                 ''' score_matrix '''
-                utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
-                utts_score[:-1] += output_logit[:,1]
+                if self.use_score_matrix:
+                    utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
+                    utts_score[:-1] += output_logit[:,1]
 
-                max_n_words = enc_output.shape[1]
-                utt_idx = 0
-                prob_indices = []
+                    max_n_words = enc_output.shape[1]
+                    utt_idx = 0
+                    prob_indices = []
 
-                for nums_words in article_lens:
-                    indices = []
-                    # print(nums_words)
-                    for num_words in nums_words:
-                        if num_words == 0:
-                            # print('0 words')
-                            continue
-                        indices += [utt_idx] * num_words
-                        utt_idx += 1
-                    indices += [-1] * (max_n_words - sum(nums_words))
-                    prob_indices.append(indices)
-                prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
+                    for nums_words in article_lens:
+                        indices = []
+                        # print(nums_words)
+                        for num_words in nums_words:
+                            if num_words == 0:
+                                # print('0 words')
+                                continue
+                            indices += [utt_idx] * num_words
+                            utt_idx += 1
+                        indices += [-1] * (max_n_words - sum(nums_words))
+                        prob_indices.append(indices)
+                    prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
 
-                '''构造分数矩阵'''
-                score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
-                score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
-                # score_matrix = None
+                    '''构造分数矩阵'''
+                    score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
+                    score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
+                else:
+                    score_matrix = None
 
             else:
                 output_logit = None
