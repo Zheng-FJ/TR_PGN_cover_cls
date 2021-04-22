@@ -42,7 +42,9 @@ def load_model(opt, device):
         dropout=model_opt.dropout,
         n_position=model_opt.max_article_len,
         use_pointer = model_opt.use_pointer, 
-        use_cls_layers=model_opt.use_cls_layers).to(device)
+        use_cls_layers=model_opt.use_cls_layers,
+        use_score_matrix=model_opt.use_score_matrix,
+        q_based=model_opt.q_based).to(device)
 
     model.load_state_dict(checkpoint['model'])
     print('[Info] Trained model state loaded.')
@@ -54,13 +56,13 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_sche/save_best.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/dudu_test_sche_score_q_topk/save_best.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/cls_layers_sche/pred.txt',
+    parser.add_argument('-output', default='./results/dudu_test_sche_score_q_topk/pred.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-beam_size', type=int, default=5)
@@ -74,6 +76,9 @@ def main():
     parser.add_argument("-use_user_mask", action="store_true")
     parser.add_argument("-use_turns_mask", action="store_true")
     parser.add_argument("-use_cls_layers", action="store_true")
+    # parser.add_argument("-use_score_matrix", action="store_true")
+    # parser.add_argument("-q_based", action="store_true")
+
 
     parser.add_argument('-pad_idx', type=int, default=0)
     parser.add_argument('-unk_idx', type=int, default=1)

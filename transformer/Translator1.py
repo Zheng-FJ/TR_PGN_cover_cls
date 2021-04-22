@@ -42,6 +42,8 @@ class Translator(nn.Module):
 
         self.use_pointer = use_pointer
         self.use_cls_layers = model.use_cls_layers
+        self.use_score_matrix = model.use_score_matrix
+        self.q_based = model.q_based
 
 
 
@@ -108,43 +110,46 @@ class Translator(nn.Module):
         if self.use_cls_layers and article_lens is not None and utt_num is not None:
             enc_utt_output = self._utts_process(enc_output, article_lens, utt_num)
             ''' Q_based'''
-            enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
-            enc_utt_output = list(enc_utt_output)
-            for i in range(len(enc_utt_output)):
-                q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
-                enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
-            enc_utt_output = tuple(enc_utt_output)
-            enc_utt_output = torch.cat(enc_utt_output, dim = 0)
+            if self.q_based:
+                enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())
+                enc_utt_output = list(enc_utt_output)
+                for i in range(len(enc_utt_output)):
+                    q_repre = enc_utt_output[i][0].unsqueeze(0).repeat([enc_utt_output[i].shape[0], 1])
+                    enc_utt_output[i] = torch.cat((q_repre, enc_utt_output[i]), dim=-1)
+                enc_utt_output = tuple(enc_utt_output)
+                enc_utt_output = torch.cat(enc_utt_output, dim = 0)
 
 
             output_logit = self.model.classify_layer(enc_utt_output)
             predicted_label = torch.argmax(output_logit, dim = -1)
 
             ''' score_matrix '''
-            utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
-            utts_score[:-1] += output_logit[:,1]
+            if self.use_score_matrix:
+                utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
+                utts_score[:-1] += output_logit[:,1]
 
-            max_n_words = enc_output.shape[1]
-            utt_idx = 0
-            prob_indices = []
+                max_n_words = enc_output.shape[1]
+                utt_idx = 0
+                prob_indices = []
 
-            for nums_words in article_lens:
-                indices = []
-                # print(nums_words)
-                for num_words in nums_words:
-                    if num_words == 0:
-                        # print('0 words')
-                        continue
-                    indices += [utt_idx] * num_words
-                    utt_idx += 1
-                indices += [-1] * (max_n_words - sum(nums_words))
-                prob_indices.append(indices)
-            prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
+                for nums_words in article_lens:
+                    indices = []
+                    # print(nums_words)
+                    for num_words in nums_words:
+                        if num_words == 0:
+                            # print('0 words')
+                            continue
+                        indices += [utt_idx] * num_words
+                        utt_idx += 1
+                    indices += [-1] * (max_n_words - sum(nums_words))
+                    prob_indices.append(indices)
+                prob_indices = torch.tensor(prob_indices)   #[batch, 300] ([batch, max_input_len])
 
-            '''构造分数矩阵'''
-            score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
-            score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
-            # score_matrix =None
+                '''构造分数矩阵'''
+                score_matrix = utts_score[prob_indices].unsqueeze(1).unsqueeze(1).repeat([1, 8, 50, 1]) # 这里默认最大target长度就是50
+                score_matrix = torch.clamp(score_matrix, min = 0.2, max = 0.8)  # 数据平滑，防止分化太严重
+            else:
+                score_matrix =None
 
         else:
             predicted_label = None

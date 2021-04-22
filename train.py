@@ -221,7 +221,8 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         # dudu_i += 1
         if opt.use_sche:
             if p <= 1.0:
-                p += 1/50000
+                p += 1/40000
+            # print(p)
         else:
             p = 0.0
         step += 1
@@ -446,7 +447,7 @@ def main():
 
     parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
     parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
@@ -468,8 +469,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test_sche_score_q_topk/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test_sche_score_q_topk/")
+    parser.add_argument('-log', default="./logs/dudu_test_sche1_score_q_0.1/")
+    parser.add_argument('-save_model', default="./save_model/dudu_test_sche1_score_q_0.1/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
