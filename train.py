@@ -76,7 +76,7 @@ def cal_loss(preds, golds, classify_res, label, sims, trg_pad_idx, p, smoothing=
 
         if classify_res is not None:
             if label is not None and sims is None:
-                BCE = nn.CrossEntropyLoss(reduction='sum')
+                BCE = nn.BCELoss(reduction='sum')
                 bce_loss = BCE(classify_res, label)
                 mse_loss = 0.
             elif label is None and sims is not None:
