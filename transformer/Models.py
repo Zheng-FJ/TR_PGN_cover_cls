@@ -244,7 +244,7 @@ class Transformer(nn.Module):
             d_word_vec=512, d_model=512, d_inner=2048,
             n_layers=6, n_head=8, d_k=64, d_v=64, dropout=0.1, n_position=200,
             trg_emb_prj_weight_sharing=True, emb_src_trg_weight_sharing=True,
-            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False):
+            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False, use_bce=False, use_regre=False):
 
         super().__init__()
 
@@ -288,14 +288,23 @@ class Transformer(nn.Module):
         
         self.use_score_matrix = use_score_matrix
         self.q_based = q_based
+        self.use_bce = use_bce
+        self.use_regre = use_regre
 
         self.use_cls_layers = use_cls_layers
         if self.use_cls_layers:
             if self.q_based:
-                self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+                if self.use_bce:
+                    self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+                elif self.use_regre:
+                    self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
+                   
             else:
-                self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
-
+                if self.use_bce:
+                    self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+                elif self.use_regre:
+                    self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
+            
 
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
@@ -325,12 +334,14 @@ class Transformer(nn.Module):
 
                 # 在这里加线性层，返回二维Logit
                 output_logit = self.classify_layer(enc_utt_output)
-                # print(output_logit.shape)
 
                 ''' score_matrix '''
                 if self.use_score_matrix:
                     utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
-                    utts_score[:-1] += output_logit[:,1]
+                    if self.use_bce:
+                        utts_score[:-1] += output_logit[:,1]
+                    elif self.use_regre:
+                        utts_score[:-1] += output_logit[:,0]
 
                     max_n_words = enc_output.shape[1]
                     utt_idx = 0

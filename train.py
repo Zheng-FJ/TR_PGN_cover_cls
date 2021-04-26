@@ -35,12 +35,12 @@ def cross_entropy(input, target, ignore_index=-100, reduction='mean'):
 
 
 
-def cal_performance(pred, gold, classify_res, label, trg_pad_idx, p, smoothing=False, cover=None):
+def cal_performance(pred, gold, classify_res, label, sims, trg_pad_idx, p, smoothing=False, cover=None):
     # print(gold.shape)
     ''' Apply label smoothing if needed '''
     non_pad_mask = gold.ne(trg_pad_idx)
     n_word = non_pad_mask.sum().item()
-    loss, loss_wo_cover, cover, bce_loss = cal_loss(pred, gold, classify_res, label, trg_pad_idx, p, smoothing=smoothing, cover=cover, n_word = n_word)
+    loss, loss_wo_cover, cover, bce_loss, mse_loss = cal_loss(pred, gold, classify_res, label, sims, trg_pad_idx, p, smoothing=smoothing, cover=cover, n_word = n_word)
     pred = pred.view(-1, pred.size(2))
     pred = pred.max(1)[1]
     gold = gold.contiguous().view(-1)
@@ -52,10 +52,10 @@ def cal_performance(pred, gold, classify_res, label, trg_pad_idx, p, smoothing=F
     n_correct = pred.eq(gold).masked_select(non_pad_mask).sum().item()
 
 
-    return loss, loss_wo_cover, cover, n_correct, n_word, bce_loss
+    return loss, loss_wo_cover, cover, n_correct, n_word, bce_loss, mse_loss
 
 
-def cal_loss(preds, golds, classify_res, label, trg_pad_idx, p, smoothing=False, cover=None, n_word = None):
+def cal_loss(preds, golds, classify_res, label, sims, trg_pad_idx, p, smoothing=False, cover=None, n_word = None):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
     if smoothing:
         eps = 0.1
@@ -75,15 +75,18 @@ def cal_loss(preds, golds, classify_res, label, trg_pad_idx, p, smoothing=False,
             loss[idx] += cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='mean')
 
         if classify_res is not None:
-            BCE = nn.CrossEntropyLoss(reduction='sum')
-            # BCE = nn.CrossEntropyLoss()
-            # bce_loss = torch.zeros([classify_res.shape[0]], dtype = torch.float32).cuda()
-            # for idx, (pred_label, gold_label) in enumerate(zip(classify_res, label)):
-            #     # bce_loss += BCE(pred_label, gold_label)
-            #     bce_loss[idx] += BCE(pred_label, gold_label)
-            bce_loss = BCE(classify_res, label)
+            if label is not None and sims is None:
+                BCE = nn.CrossEntropyLoss(reduction='sum')
+                bce_loss = BCE(classify_res, label)
+                mse_loss = 0.
+            elif label is None and sims is not None:
+                classify_res = classify_res.squeeze(1)
+                MSE = nn.MSELoss(reduction='sum')
+                mse_loss = MSE(classify_res, sims)
+                bce_loss = 0.
         else:
             bce_loss = 0.
+            mse_loss = 0.
 
         Lambda = 1 - (1 / (1 + math.exp(-10 * p)))
         # print(Lambda)
@@ -93,8 +96,11 @@ def cal_loss(preds, golds, classify_res, label, trg_pad_idx, p, smoothing=False,
         else:
             final_loss = loss
 
-        final_loss = torch.sum(final_loss) + Lambda * bce_loss
-
+        if label is not None and sims is None:
+            final_loss = torch.sum(final_loss) + Lambda * bce_loss
+        elif label is None and sims is not None:
+            final_loss = torch.sum(final_loss) + 0.2 * mse_loss
+       
         loss = torch.sum(loss)
 
 
@@ -103,7 +109,7 @@ def cal_loss(preds, golds, classify_res, label, trg_pad_idx, p, smoothing=False,
 
 
 
-    return final_loss, loss, cover, Lambda * bce_loss
+    return final_loss, loss, cover, Lambda * bce_loss, 0.2*mse_loss
 
 
 def patch_src(src, pad_idx):
@@ -121,7 +127,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
     ''' Epoch operation in training phase'''
 
     model.train()
-    total_loss, total_loss_wo_cover, total_cover, total_bce_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0
+    total_loss, total_loss_wo_cover, total_cover, total_bce_loss, total_mse_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0, 0
     step = 0
     # total_attn = [torch.zeros([15, 8, 50, 300], dtype=torch.float32).cuda()] * 6
     # dudu_i = 0
@@ -146,22 +152,37 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         init_coverage = model_inputs[5] if opt.use_coverage else None
         
         if opt.use_cls_layers:
-            article_lens = model_inputs[11]
-            max_art_len = model_inputs[12]
-            utt_num = model_inputs[13]
-            label = model_inputs[10]
-            total_utt_num = torch.sum(utt_num)
-            sz = label.shape[0]
-            tmp = []
-            # label_per_batch = torch.zeros([total_utt_num], dtype=torch.long).cuda()
-            for i in range(sz):
-                tmp.append(label[i, :utt_num[i]])
-            tmp = tuple(tmp)
-            label_per_batch = torch.cat(tmp, dim = 0)
-            label = label_per_batch
-            # print(trg_seq)
-            # print(gold)
-            # exit()
+            if opt.use_regre:
+                label = None
+                sims = model_inputs[14]
+                article_lens = model_inputs[11]
+                max_art_len = model_inputs[12]
+                utt_num = model_inputs[13]
+                total_utt_num = torch.sum(utt_num)
+                sz = sims.shape[0]
+                tmp = []
+                for i in range(sz):
+                    tmp.append(sims[i, :utt_num[i]])
+                tmp = tuple(tmp)
+                sims_per_batch = torch.cat(tmp, dim = 0)
+                sims = sims_per_batch
+
+            elif opt.use_bce:
+                sims = None
+                label = model_inputs[10]
+                article_lens = model_inputs[11]
+                max_art_len = model_inputs[12]
+                utt_num = model_inputs[13]
+                total_utt_num = torch.sum(utt_num)
+                sz = label.shape[0]
+                tmp = []
+                # label_per_batch = torch.zeros([total_utt_num], dtype=torch.long).cuda()
+                for i in range(sz):
+                    tmp.append(label[i, :utt_num[i]])
+                tmp = tuple(tmp)
+                label_per_batch = torch.cat(tmp, dim = 0)
+                label = label_per_batch
+
         else:
             label = None
             article_lens = None
@@ -169,6 +190,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
             utt_num  = None
             classify_res = None
             label = None
+            sims = None
 
         # forward
         optimizer.zero_grad()
@@ -204,8 +226,8 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         #gold = gold.contiguous().view(-1)
 
         # backward and update parameters
-        loss, loss_wo_cover, cover, n_correct, n_word, bce_loss = cal_performance(
-            pred, gold, classify_res, label, opt.pad_idx, p, smoothing=smoothing, cover=coverage)
+        loss, loss_wo_cover, cover, n_correct, n_word, bce_loss, mse_loss = cal_performance(
+            pred, gold, classify_res, label, sims, opt.pad_idx, p, smoothing=smoothing, cover=coverage)
         loss.backward()
         # bce_loss.backward(retain_graph=True)
         #print(loss)
@@ -221,7 +243,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         # dudu_i += 1
         if opt.use_sche:
             if p <= 1.0:
-                p += 1/40000
+                p += 1/30000
             # print(p)
         else:
             p = 0.0
@@ -235,7 +257,10 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         if cover is not None:
             total_cover += cover.item()
         if opt.use_cls_layers:
-            total_bce_loss += bce_loss.item()
+            if opt.use_bce:
+                total_bce_loss += bce_loss.item()
+            elif opt.use_regre:
+                total_mse_loss += mse_loss.item()
     #print("n_word_total: ",n_word_total)
     #exit()
     #print("step: ",step)
@@ -246,15 +271,16 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
     else:
         cover_per_batch = None
     bce_loss_per_batch = total_bce_loss/step
+    mse_loss_per_batch = total_mse_loss/step
     accuracy = n_word_correct/n_word_total
-    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, accuracy, p
+    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, mse_loss_per_batch, accuracy, p
 
 
 def eval_epoch(model, validation_data, opt, p):
     ''' Epoch operation in evaluation phase '''
 
     model.eval()
-    total_loss, total_loss_wo_cover, total_cover, total_bce_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0
+    total_loss, total_loss_wo_cover, total_cover, total_bce_loss, total_mse_loss, n_word_total, n_word_correct = 0, 0, 0, 0, 0, 0, 0
     step = 0
 
     desc = '  - (Validation) '
@@ -276,19 +302,37 @@ def eval_epoch(model, validation_data, opt, p):
             init_coverage = model_inputs[5] if opt.use_coverage else None
 
             if opt.use_cls_layers:
-                label = model_inputs[10]
-                article_lens = model_inputs[11]
-                max_art_len = model_inputs[12]
-                utt_num = model_inputs[13]
+                if opt.use_regre:
+                    label = None
+                    sims = model_inputs[14]
+                    article_lens = model_inputs[11]
+                    max_art_len = model_inputs[12]
+                    utt_num = model_inputs[13]
 
-                total_utt_num = torch.sum(utt_num)
-                sz = label.shape[0]
-                tmp = []
-                for i in range(sz):
-                    tmp.append(label[i, :utt_num[i]])
-                tmp = tuple(tmp)
-                label_per_batch = torch.cat(tmp, dim = 0)
-                label = label_per_batch
+                    total_utt_num = torch.sum(utt_num)
+                    sz = sims.shape[0]
+                    tmp = []
+                    for i in range(sz):
+                        tmp.append(sims[i, :utt_num[i]])
+                    tmp = tuple(tmp)
+                    sims_per_batch = torch.cat(tmp, dim = 0)
+                    sims = sims_per_batch
+
+
+                elif opt.use_bce:
+                    label = model_inputs[10]
+                    article_lens = model_inputs[11]
+                    max_art_len = model_inputs[12]
+                    utt_num = model_inputs[13]
+
+                    total_utt_num = torch.sum(utt_num)
+                    sz = label.shape[0]
+                    tmp = []
+                    for i in range(sz):
+                        tmp.append(label[i, :utt_num[i]])
+                    tmp = tuple(tmp)
+                    label_per_batch = torch.cat(tmp, dim = 0)
+                    label = label_per_batch
             else:
                 label = None
                 article_lens = None
@@ -296,6 +340,7 @@ def eval_epoch(model, validation_data, opt, p):
                 utt_num = None
                 classify_res = None
                 label = None
+                sims = None
 
 
             # forward
@@ -310,8 +355,8 @@ def eval_epoch(model, validation_data, opt, p):
                 coverage = torch.mean(coverage, dim=-1)
 
 
-            loss, loss_wo_cover, cover, n_correct, n_word, bce_loss = cal_performance(
-                pred, gold, classify_res, label, opt.pad_idx, p, smoothing=False, cover = coverage)
+            loss, loss_wo_cover, cover, n_correct, n_word, bce_loss, mse_loss = cal_performance(
+                pred, gold, classify_res, label, sims, opt.pad_idx, p, smoothing=False, cover = coverage)
 
 
             # note keeping
@@ -323,7 +368,10 @@ def eval_epoch(model, validation_data, opt, p):
             if cover is not None:
                 total_cover += cover.item()
             if opt.use_cls_layers:
-                total_bce_loss += bce_loss.item()
+                if opt.use_bce:
+                    total_bce_loss += bce_loss.item()
+                elif opt.use_regre:
+                    total_mse_loss += mse_loss.item()
 
     loss_per_word = total_loss/step   #loss per batch
     loss_wo_cover_per_batch = total_loss_wo_cover/step  #loss per batch
@@ -332,8 +380,9 @@ def eval_epoch(model, validation_data, opt, p):
     else:
         cover_per_batch = None
     bce_loss_per_batch = total_bce_loss/step
+    mse_loss_per_batch = total_mse_loss/step
     accuracy = n_word_correct/n_word_total
-    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, accuracy
+    return loss_per_word, loss_wo_cover_per_batch, cover_per_batch, bce_loss_per_batch, mse_loss_per_batch, accuracy
 
 
 def train(model, training_data, validation_data, optimizer, opt):
@@ -350,15 +399,15 @@ def train(model, training_data, validation_data, optimizer, opt):
         print('[Info] Training performance will be written to file: {} and {}'.format(
             log_train_file, log_valid_file))
         with open(log_train_file, 'w') as log_tf, open(log_valid_file, 'w') as log_vf:
-            log_tf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
-            log_vf.write('epoch,loss,loss_wo_cover,cover,bce_loss,ppl,accuracy\n')
+            log_tf.write('epoch,loss,loss_wo_cover,cover,bce_loss,mse_loss,ppl,accuracy\n')
+            log_vf.write('epoch,loss,loss_wo_cover,cover,bce_loss,mse_loss,ppl,accuracy\n')
 
-    def print_performances(header, loss, loss_wo_cover, cover, bce_loss, accu, start_time):
+    def print_performances(header, loss, loss_wo_cover, cover, bce_loss, mse_loss, accu, start_time):
         #print("loss_wo_cover: ",loss_wo_cover)
         #print("cover: ",float(cover))
-        print('  - {header:12} loss: {loss: 8.5f}, loss_wo_cover: {loss_wo_cover: 8.5f}, cover:{cover}, bce_loss:{bce_loss}, accuracy: {accu:3.3f} %, '\
+        print('  - {header:12} loss: {loss: 8.5f}, loss_wo_cover: {loss_wo_cover: 8.5f}, cover:{cover}, bce_loss:{bce_loss}, mse_loss:{mse_loss}, accuracy: {accu:3.3f} %, '\
               'elapse: {elapse:3.3f} min'.format(
-                  header=f"({header})", loss=loss, loss_wo_cover=loss_wo_cover, cover=cover, bce_loss = bce_loss,
+                  header=f"({header})", loss=loss, loss_wo_cover=loss_wo_cover, cover=cover, bce_loss = bce_loss, mse_loss = mse_loss,
                   accu=100*accu, elapse=(time.time()-start_time)/60))
 
     # valid_accus = []
@@ -371,13 +420,13 @@ def train(model, training_data, validation_data, optimizer, opt):
         #     f.write('[ Epoch ' +  str(epoch_i) + ' ]' + '\n')
 
         start = time.time()
-        train_loss, train_loss_wo_cover, train_cover, train_bce_loss, train_accu, p = train_epoch(
+        train_loss, train_loss_wo_cover, train_cover, train_bce_loss, train_mse_loss, train_accu, p = train_epoch(
             model, training_data, optimizer, opt, smoothing=opt.label_smoothing, p = p)
-        print_performances('Training', train_loss, train_loss_wo_cover, train_cover,train_bce_loss, train_accu, start)
+        print_performances('Training', train_loss, train_loss_wo_cover, train_cover,train_bce_loss, train_mse_loss, train_accu, start)
 
         start = time.time()
-        valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_accu = eval_epoch(model, validation_data, opt, p)
-        print_performances('Validation', valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_accu, start)
+        valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_mse_loss, valid_accu = eval_epoch(model, validation_data, opt, p)
+        print_performances('Validation', valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_mse_loss, valid_accu, start)
 
         valid_wo_cover_losses += [valid_loss_wo_cover]
         # valid_accus += [valid_accu]
@@ -399,11 +448,11 @@ def train(model, training_data, validation_data, optimizer, opt):
 
         if log_train_file and log_valid_file:
             with open(log_train_file, 'a') as log_tf, open(log_valid_file, 'a') as log_vf:
-                log_tf.write('{epoch},{loss: 8.5f},{loss_wo_cover: 8.5f},{cover},{bce_loss},{ppl: 8.5f},{accu:3.3f}\n'.format(
-                    epoch=epoch_i, loss=train_loss, loss_wo_cover=train_loss_wo_cover, cover=train_cover, bce_loss=train_bce_loss,
+                log_tf.write('{epoch},{loss: 8.5f},{loss_wo_cover: 8.5f},{cover},{bce_loss},{mse_loss},{ppl: 8.5f},{accu:3.3f}\n'.format(
+                    epoch=epoch_i, loss=train_loss, loss_wo_cover=train_loss_wo_cover, cover=train_cover, bce_loss=train_bce_loss, mse_loss=train_mse_loss,
                     ppl=math.exp(min(train_loss, 100)), accu=100*train_accu))
-                log_vf.write('{epoch},{loss: 8.5f},{loss_wo_cover: 8.5f},{cover},{bce_loss},{ppl: 8.5f},{accu:3.3f}\n'.format(
-                    epoch=epoch_i, loss=valid_loss,loss_wo_cover=valid_loss_wo_cover,cover=valid_cover,bce_loss=valid_bce_loss,
+                log_vf.write('{epoch},{loss: 8.5f},{loss_wo_cover: 8.5f},{cover},{bce_loss},{mse_loss},{ppl: 8.5f},{accu:3.3f}\n'.format(
+                    epoch=epoch_i, loss=valid_loss,loss_wo_cover=valid_loss_wo_cover,cover=valid_cover,bce_loss=valid_bce_loss,mse_loss=valid_mse_loss,
                     ppl=math.exp(min(valid_loss, 100)), accu=100*valid_accu))
         
         '''画attention热力图'''
@@ -445,10 +494,11 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
-    parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
-    parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
+    parser.add_argument('-train_path', type=str, default="./finished_csv_files/train.csv")
+    parser.add_argument('-valid_path', type=str, default="./finished_csv_files/valid.csv")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
+    parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
+    parser.add_argument("-vocab_path", type=str, default="./finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
     parser.add_argument('-epoch', type=int, default=100)
@@ -469,8 +519,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test_sche1_score_q_0.1/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test_sche1_score_q_0.1/")
+    parser.add_argument('-log', default="./logs/dudu_test_regre_sche30k_score_q/")
+    parser.add_argument('-save_model', default="./save_model/dudu_test_regre_sche30k_score_q/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -493,6 +543,9 @@ def main():
     parser.add_argument('-use_sche', action='store_true')
     parser.add_argument('-use_score_matrix', action='store_true')
     parser.add_argument('-q_based', action='store_true')
+    parser.add_argument('-use_bce', action='store_true')
+    parser.add_argument('-use_regre', action='store_true')
+
 
 
 
@@ -544,7 +597,9 @@ def main():
         use_pointer=opt.use_pointer,
         use_cls_layers=opt.use_cls_layers,
         use_score_matrix=opt.use_score_matrix,
-        q_based=opt.q_based
+        q_based=opt.q_based,
+        use_bce=opt.use_bce,
+        use_regre=opt.use_regre
         ).to(device)
 
     for name, parameters in transformer.named_parameters():
@@ -595,7 +650,7 @@ def prepare_dataloaders(opt):
     batch_size = opt.batch_size
     #vocab = Vocab(opt.vocab_path, opt.vocab_size)
 
-    train_examples = get_example_loader(opt.train_path, opt.label_path, opt.vocab_path, opt.vocab_size,
+    train_examples = get_example_loader(opt.train_path, opt.label_path, opt.sim_path, opt.vocab_path, opt.vocab_size,
                                         opt.max_article_len, opt.max_title_len,
                                         use_pointer=opt.use_pointer,
                                         test_mode=opt.test_mode,
@@ -606,7 +661,7 @@ def prepare_dataloaders(opt):
     train_sampler = RandomSampler(train_dataset) # for training random shuffle
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
 
-    valid_examples = get_example_loader(opt.valid_path, opt.label_path, opt.vocab_path, opt.vocab_size,
+    valid_examples = get_example_loader(opt.valid_path, opt.label_path, opt.sim_path, opt.vocab_path, opt.vocab_size,
                                         opt.max_article_len, opt.max_title_len,
                                         use_pointer=opt.use_pointer,
                                         test_mode=opt.test_mode,

@@ -55,7 +55,7 @@ class Example(object):
             self.article_oovs
             self.oov_len
     '''
-    def __init__(self, article, title, label, utt_num, 
+    def __init__(self, article, title, label, sim, utt_num, 
                  encoder_input, decoder_input, decoder_target,
                  encoder_input_with_oov, article_oovs, decoder_target_with_oov,
                  max_encoder_len, max_decoder_len, pad_idx=0, article_lens=None, mask_lens = None, use_utter_trunc=False,
@@ -68,6 +68,7 @@ class Example(object):
         self.mask_lens = mask_lens
         self.title = title # str
         self.label = label  # list
+        self.sim = sim
         self.utt_num = utt_num # int
 
         self.encoder_input ,self.encoder_mask = \
@@ -113,7 +114,7 @@ class Example(object):
         else:
             return x
 
-def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label, max_article_len, max_title_len,
+def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label, sim, max_article_len, max_title_len,
                                use_pointer=False, print_details=False, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
     if 0 == len(title) or 0 == len(article):
         return None
@@ -214,6 +215,7 @@ def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label
         mask_lens = mask_lens,
         title = title,
         label = label,
+        sim = sim,
         utt_num = utt_num,
         encoder_input = encoder_input,
         decoder_input = decoder_input,
@@ -242,7 +244,7 @@ def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label
 
     return example
 
-def get_example_loader(data_path, labels_path, vocab_path, vocab_size, max_article_len,
+def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size, max_article_len,
                        max_title_len, use_pointer, test_mode=False, test_num=100, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
     assert os.path.exists(data_path)
 
@@ -251,6 +253,8 @@ def get_example_loader(data_path, labels_path, vocab_path, vocab_size, max_artic
     print("[INFO] loading datas...")
     with open(labels_path, 'r', encoding='utf-8')as f:
         labels_data = json.load(f)
+    with open(sim_path, 'r', encoding='utf-8')as f_s:
+        sim_data = json.load(f_s)
     df = pd.read_csv(data_path)
     qids = df['QID'].tolist()
     problems = df['Problem'].tolist()
@@ -273,7 +277,9 @@ def get_example_loader(data_path, labels_path, vocab_path, vocab_size, max_artic
         try:
             # for qichedashi
             label = labels_data[qid]
+            sim = sim_data[qid]
             label = [1] + label
+            sim = [0.3] + sim
             art = "车主说：" + prob + "|" + conv
             #art_ = [jieba.lcut(line) for line in art_.split('|')] 
 
@@ -357,6 +363,7 @@ def get_example_loader(data_path, labels_path, vocab_path, vocab_size, max_artic
             mask_lens=mask_lens,
             title=tit,
             label = label,
+            sim = sim,
             max_article_len=max_article_len,
             max_title_len=max_title_len,
             use_pointer=use_pointer,
@@ -498,6 +505,10 @@ def covert_loader_to_dataset(example_loader):
     pad_to_same_length(all_labels)
     all_labels = torch.tensor(all_labels, dtype=torch.long)
 
+    all_sims = [ex.sim for ex in example_loader]
+    pad_to_same_length(all_sims)
+    all_sims = torch.tensor(all_sims, dtype=torch.float32)
+
     all_utt_num = torch.tensor([ex.utt_num for ex in example_loader], dtype=torch.long)
 
 
@@ -548,7 +559,7 @@ def covert_loader_to_dataset(example_loader):
     elif not example_loader[0].use_utter_trunc and example_loader[0].use_user_mask and not example_loader[0].use_turns_mask: # user
         dataset = TensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
                                 all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov,
-                                all_oov_len,  all_max_encoder_lens, all_users, all_labels, all_article_lens, max_art_len, all_utt_num)
+                                all_oov_len,  all_max_encoder_lens, all_users, all_labels, all_sims, all_article_lens, max_art_len, all_utt_num)
     elif not example_loader[0].use_utter_trunc and not example_loader[0].use_user_mask and example_loader[0].use_turns_mask: # turns
         dataset = TensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
                                 all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov,
@@ -802,7 +813,7 @@ def from_batch_get_model_input(batch, hidden_dim, use_pointer=True, use_coverage
         model_input = [t.cuda() if t is not None else None for t in model_input]
     
     elif not use_utter_trunc and use_user_mask and not use_turns_mask:  # user
-        all_max_encoder_lens, all_users, all_labels, all_article_lens, max_art_len, all_utt_num = batch[8], batch[9], batch[10], batch[11], batch[12], batch[13]
+        all_max_encoder_lens, all_users, all_labels, all_sims, all_article_lens, max_art_len, all_utt_num = batch[8], batch[9], batch[10], batch[11], batch[12], batch[13], batch[14]
 
         all_user_mask = []
         for users, max_len in zip(all_users, all_max_encoder_lens):
@@ -812,7 +823,7 @@ def from_batch_get_model_input(batch, hidden_dim, use_pointer=True, use_coverage
 
 
         model_input = [all_encoder_input, all_encoder_mask, all_encoder_input_with_oov, oov_zeros, init_context_vec,
-                       init_coverage, all_decoder_input, all_decoder_mask, all_decoder_target, all_user_mask, all_labels, all_article_lens, max_art_len, all_utt_num]
+                       init_coverage, all_decoder_input, all_decoder_mask, all_decoder_target, all_user_mask, all_labels, all_article_lens, max_art_len, all_utt_num, all_sims]
         model_input = [t.cuda() if t is not None else None for t in model_input]
 
     elif not use_utter_trunc and not use_user_mask and use_turns_mask:  #turns
