@@ -44,6 +44,8 @@ class Translator(nn.Module):
         self.use_cls_layers = model.use_cls_layers
         self.use_score_matrix = model.use_score_matrix
         self.q_based = model.q_based
+        self.use_bce = model.use_bce
+        self.use_rgere = model.use_regre
 
 
 
@@ -121,12 +123,18 @@ class Translator(nn.Module):
 
 
             output_logit = self.model.classify_layer(enc_utt_output)
-            predicted_label = torch.argmax(output_logit, dim = -1)
+            if self.use_bce:
+                predicted_label = torch.argmax(output_logit, dim = -1)
+            elif self.use_rgere:
+                predicted_label = None
 
             ''' score_matrix '''
             if self.use_score_matrix:
                 utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
-                utts_score[:-1] += output_logit[:,1]
+                if self.use_bce:
+                    utts_score[:-1] += output_logit[:,1]
+                elif self.use_rgere:
+                    utts_score[:-1] += output_logit[:,0]
 
                 max_n_words = enc_output.shape[1]
                 utt_idx = 0

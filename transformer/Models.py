@@ -166,11 +166,11 @@ class label_classification(nn.Module):
     
     def forward(self, encoder_output):
 
-        output = torch.sigmoid(self.hidden_layer1(encoder_output))
-        output=  torch.sigmoid(self.hidden_layer2(output))
+        output = nn.GELU(self.hidden_layer1(encoder_output))
+        output= nn.GELU(self.hidden_layer2(output))
         output = self.classify_output(output)
 
-        output_logit = F.softmax(output, dim = -1)      
+        output_logit = nn.Sigmoid(output)      
 
         return output_logit
 
@@ -295,13 +295,13 @@ class Transformer(nn.Module):
         if self.use_cls_layers:
             if self.q_based:
                 if self.use_bce:
-                    self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+                    self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
                 elif self.use_regre:
                     self.classify_layer = label_classification(n_feature = d_model*2, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
                    
             else:
                 if self.use_bce:
-                    self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 2)
+                    self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
                 elif self.use_regre:
                     self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
             
