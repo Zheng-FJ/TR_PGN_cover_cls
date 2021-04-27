@@ -76,6 +76,7 @@ def cal_loss(preds, golds, classify_res, label, sims, trg_pad_idx, p, smoothing=
 
         if classify_res is not None:
             if label is not None and sims is None:
+                classify_res = classify_res.squeeze(1)
                 BCE = nn.BCELoss(reduction='sum')
                 bce_loss = BCE(classify_res, label)
                 mse_loss = 0.
@@ -243,7 +244,7 @@ def train_epoch(model, training_data, optimizer, opt, smoothing, p):
         # dudu_i += 1
         if opt.use_sche:
             if p <= 1.0:
-                p += 1/30000
+                p += 1/50000
             # print(p)
         else:
             p = 0.0
@@ -320,6 +321,7 @@ def eval_epoch(model, validation_data, opt, p):
 
 
                 elif opt.use_bce:
+                    sims = None
                     label = model_inputs[10]
                     article_lens = model_inputs[11]
                     max_art_len = model_inputs[12]
@@ -496,7 +498,7 @@ def main():
 
     parser.add_argument('-train_path', type=str, default="./finished_csv_files/train.csv")
     parser.add_argument('-valid_path', type=str, default="./finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
     parser.add_argument("-vocab_path", type=str, default="./finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
@@ -519,8 +521,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/dudu_test_regre_sche30k_score_q/")
-    parser.add_argument('-save_model', default="./save_model/dudu_test_regre_sche30k_score_q/")
+    parser.add_argument('-log', default="./logs/cls_layers_regre_modify/")
+    parser.add_argument('-save_model', default="./save_model/cls_layers_regre_modify/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)

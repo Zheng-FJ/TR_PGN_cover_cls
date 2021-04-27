@@ -165,14 +165,14 @@ class label_classification(nn.Module):
         self.classify_output = nn.Linear(n_hidden2, n_output)
     
     def forward(self, encoder_output):
-
-        output = nn.GELU(self.hidden_layer1(encoder_output))
-        output= nn.GELU(self.hidden_layer2(output))
+        
+        output = F.gelu(self.hidden_layer1(encoder_output))
+        output= F.gelu(self.hidden_layer2(output))
         output = self.classify_output(output)
 
-        output_logit = nn.Sigmoid(output)      
+        output_logit = torch.sigmoid(output)      
 
-        return output_logit
+        return output_logit 
 
 def split_utts(input_repre, sections, max_art_len):
     b_s = input_repre.shape[0]
