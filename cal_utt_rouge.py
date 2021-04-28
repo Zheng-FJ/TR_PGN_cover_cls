@@ -8,13 +8,13 @@ from rouge import Rouge
 import sys   
 sys.setrecursionlimit(100000)
 
-file_path = './finished_csv_files/'
+file_path = '/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/'
 train_file = os.path.join(file_path, 'train.csv')
 test_file = os.path.join(file_path, 'test.csv')
 valid_file = os.path.join(file_path, 'valid.csv')
 rouge = Rouge()
 
-output_file = './rouge_result_sim.json'
+output_file = './rouge_result_0.08.json'
 
 labels = collections.defaultdict(list)
 
@@ -50,9 +50,9 @@ for file_name in [valid_file, test_file, train_file]:
         for utt in cov:
             refs.append(rep)
         r = rouge.get_scores(utts, refs)
-        for line in r:
-            rouge_avg = np.mean([line['rouge-1']['f'], line['rouge-2']['f'], line['rouge-l']['f']])
-            labels[qid].append(rouge_avg)
+        # for line in r:
+        #     rouge_avg = np.mean([line['rouge-1']['f'], line['rouge-2']['f'], line['rouge-l']['f']])
+        #     labels[qid].append(rouge_avg)
         # r_l_f = []
         # for line in r:
         #     r_l_f.append(line['rouge-l']['f'])
@@ -65,12 +65,13 @@ for file_name in [valid_file, test_file, train_file]:
 
         # th = r_l_f[k]
 
-        # for line in r:
-        #     f_score = line['rouge-l']['f']
-        #     if f_score < th or f_score < 0.1:
-        #         labels[qid].append(0)
-        #     else:
-        #         labels[qid].append(1)
+        for line in r:
+            f_score = line['rouge-l']['f']
+            # if f_score < th or f_score < 0.08:
+            if f_score < 0.08:
+                labels[qid].append(0)
+            else:
+                labels[qid].append(1)
 print('writing to json ...')
 with open(output_file, 'w', encoding='utf-8')as f:
     json.dump(labels, f)       

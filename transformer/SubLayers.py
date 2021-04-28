@@ -80,10 +80,10 @@ class MultiHeadAttention_with_extra_mask(nn.Module):
         q3 = self.layer_norm3(self.dropout3(self.linear3(q3))) 
         q4 = self.layer_norm4(self.dropout4(self.linear4(q4)))  
 
-        q = 0.5*q1 + 0.5*q3
+        q = 0.2*q1 + 0.3*q3
         # q = 0.2*q1 + 0.4*q2 + 0.4*q3
         # q = q1
-        attn = 0.5*attn1 + 0.5*attn3
+        attn = 0.2*attn1 + 0.3*attn3
         # attn = 0.2*attn1 + 0.4*attn2 + 0.4*attn3
         # attn = attn1
 

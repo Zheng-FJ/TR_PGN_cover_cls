@@ -58,14 +58,14 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/dudu_test_regre_sche30k_score_q/save_best.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_0.08_sche50k_0.3mask_modify/save_best.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_sim.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.08.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/dudu_test_regre_sche30k_score_q/pred.txt',
+    parser.add_argument('-output', default='./results/cls_layers_0.08_sche50k_0.3mask_modify/pred.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-beam_size', type=int, default=5)

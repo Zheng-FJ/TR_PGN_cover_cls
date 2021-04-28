@@ -496,11 +496,11 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-train_path', type=str, default="./finished_csv_files/train.csv")
-    parser.add_argument('-valid_path', type=str, default="./finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
+    parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
+    parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.08.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
-    parser.add_argument("-vocab_path", type=str, default="./finished_csv_files/vocab")
+    parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
     parser.add_argument('-epoch', type=int, default=100)
@@ -521,8 +521,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/cls_layers_regre_modify/")
-    parser.add_argument('-save_model', default="./save_model/cls_layers_regre_modify/")
+    parser.add_argument('-log', default="./logs/cls_layers_0.08_sche50k_0.3mask_modify/")
+    parser.add_argument('-save_model', default="./save_model/cls_layers_0.08_sche50k_0.3mask_modify/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
