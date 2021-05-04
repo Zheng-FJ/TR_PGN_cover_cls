@@ -58,14 +58,14 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_0.08_sche50k_0.3mask_modify/save_best.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_0.1_sche40k_0.3mask_gelubce/save_best_validloss.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.08.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/cls_layers_0.08_sche50k_0.3mask_modify/pred.txt',
+    parser.add_argument('-output', default='./results/cls_layers_0.1_sche40k_0.3mask_gelubce/validloss_pred.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-beam_size', type=int, default=5)
@@ -158,6 +158,14 @@ def main():
             pred_seq, predicted_label = translator.translate_sentence(src_seq, src_seq_with_oovs, oov_zeros, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num)
             if predicted_label is not None:
                 predicted_label =  predicted_label.cpu().numpy().tolist()
+                pre = []
+                for line in predicted_label:
+                    if line > 0.5:
+                        pre.append(1)
+                    else:
+                        pre.append(0)
+                predicted_label = pre
+
                 gold_label = []
                 for x in labels:
                     gold_label += x.numpy().tolist()

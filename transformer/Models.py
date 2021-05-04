@@ -51,7 +51,7 @@ class Encoder(nn.Module):
 
     def __init__(
             self, n_src_vocab, d_word_vec, n_layers, n_head, d_k, d_v,
-            d_model, d_inner, pad_idx, dropout=0.1, n_position=200):
+            d_model, d_inner, pad_idx, dropout=0.1, n_position=200, utt_encode=False):
 
         super().__init__()
 
@@ -62,6 +62,7 @@ class Encoder(nn.Module):
             EncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout)
             for _ in range(n_layers)])
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+        self.utt_encode = utt_encode
 
 
     def forward(self, src_seq, src_mask, return_attns=False, attn_mask1 = None, attn_mask2 = None, attn_mask3 = None):
@@ -69,10 +70,12 @@ class Encoder(nn.Module):
         enc_slf_attn_list = []
 
         # -- Forward
+        if self.utt_encode:
+            enc_output = src_seq
+        else:
+            enc_output = self.dropout(self.position_enc(self.src_word_emb(src_seq)))
+            enc_output = self.layer_norm(enc_output)
         
-        enc_output = self.dropout(self.position_enc(self.src_word_emb(src_seq)))
-        enc_output = self.layer_norm(enc_output)
-
         for enc_layer in self.layer_stack:
             enc_output, enc_slf_attn, enc_hidden_states = enc_layer(enc_output, slf_attn_mask=src_mask, attn_mask1 = attn_mask1, attn_mask2 = attn_mask2, attn_mask3 = attn_mask3)
             enc_slf_attn_list += [enc_slf_attn] if return_attns else []
@@ -170,7 +173,8 @@ class label_classification(nn.Module):
         output= F.gelu(self.hidden_layer2(output))
         output = self.classify_output(output)
 
-        output_logit = torch.sigmoid(output)      
+        # output_logit = F.softmax(output, dim = 1)   
+        output_logit = torch.sigmoid(output)   
 
         return output_logit 
 
@@ -210,12 +214,24 @@ def split_utts(input_repre, sections, max_art_len):
 
     return res
 
-def utts_process(input_repre, sections, utt_num):
+def utts_process(input_repre, sections, utt_num, padding = False, utt_merge=False):
     b_s = input_repre.shape[0]
     size = input_repre.shape[1]
     emb_dim = input_repre.shape[2]
     total_utt_num = torch.sum(utt_num)
+    max_utt_num = torch.max(utt_num)
     res = torch.zeros([total_utt_num, emb_dim], dtype = torch.float32).cuda()
+    res1 = torch.zeros([b_s, max_utt_num, emb_dim], dtype=torch.float32).cuda() 
+
+    if utt_merge:
+        idx2 = 0
+        for i in range(b_s):
+            for utt in input_repre[i, :utt_num[i], :]:
+                res[idx2] += utt
+                idx2 += 1
+
+        return res
+
 
     idx = 0
     for i in range(b_s):
@@ -227,13 +243,23 @@ def utts_process(input_repre, sections, utt_num):
 
         splited_utt = torch.split(input_repre[i], section, dim=0)
         splited_utt = splited_utt[:-1]
-        for utt in splited_utt:
-            res[idx] += (utt[0, :])
-            idx += 1
-    # print(total_utt_num)
-    # print(res.shape)
-    # exit()
-    return res
+
+        if padding:        
+            idx1 = 0
+            for utt in splited_utt:
+                res1[i, idx1] += utt[0, :]
+                idx1 += 1
+        else:
+
+            for utt in splited_utt:
+                res[idx] += (utt[0, :])
+                idx += 1
+
+    if padding:
+        res1_mask = get_pad_mask(res1[:,:,0], pad_idx=0.0)
+        return res1, res1_mask
+    else:
+        return res
 
 
 class Transformer(nn.Module):
@@ -244,7 +270,7 @@ class Transformer(nn.Module):
             d_word_vec=512, d_model=512, d_inner=2048,
             n_layers=6, n_head=8, d_k=64, d_v=64, dropout=0.1, n_position=200,
             trg_emb_prj_weight_sharing=True, emb_src_trg_weight_sharing=True,
-            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False, use_bce=False, use_regre=False):
+            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False, use_bce=False, use_regre=False, utt_encode=False):
 
         super().__init__()
 
@@ -256,7 +282,7 @@ class Transformer(nn.Module):
             n_src_vocab=n_src_vocab, n_position=n_position,
             d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner,
             n_layers=n_layers, n_head=n_head, d_k=d_k, d_v=d_v,
-            pad_idx=src_pad_idx, dropout=dropout)
+            pad_idx=src_pad_idx, dropout=dropout, utt_encode=False)
 
         self.decoder = Decoder(
             n_trg_vocab=n_trg_vocab, n_position=n_position,
@@ -304,7 +330,14 @@ class Transformer(nn.Module):
                     self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
                 elif self.use_regre:
                     self.classify_layer = label_classification(n_feature = d_model, n_hidden1 = 256, n_hidden2 = 128, n_output = 1)
-            
+        
+        self.utt_encode = utt_encode
+        if self.utt_encode:
+            self.utt_encoder =   Encoder(
+            n_src_vocab=n_src_vocab, n_position=n_position,
+            d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner,
+            n_layers=1, n_head=n_head, d_k=d_k, d_v=d_v,
+            pad_idx=src_pad_idx, dropout=dropout, utt_encode=True)
 
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
@@ -319,7 +352,15 @@ class Transformer(nn.Module):
             # enc_utt_output = split_utts(enc_output, article_lens, max_art_len)
             if self.use_cls_layers:
                 '''这里要取出每个句子的第一个表示，然后把一个batch里面的句子结合在一起'''
-                enc_utt_output = utts_process(enc_output, article_lens, utt_num)
+
+                ''' utterance encode '''
+                if self.utt_encode:
+                    enc_utt_output, enc_utt_mask = utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
+                    enc_utt_output = self.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=None, attn_mask3=None)
+                    enc_utt_output = utts_process(enc_utt_output, article_lens, utt_num, padding=False, utt_merge=True)
+                else:
+                    enc_utt_output  = utts_process(enc_output, article_lens, utt_num, padding=False, utt_merge=False)
+                
 
                 ''' Q_based'''
                 if self.q_based:
@@ -335,11 +376,13 @@ class Transformer(nn.Module):
                 # 在这里加线性层，返回二维Logit
                 output_logit = self.classify_layer(enc_utt_output)
 
+
                 ''' score_matrix '''
                 if self.use_score_matrix:
                     utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
                     if self.use_bce:
-                        utts_score[:-1] += output_logit[:,1]
+                        # utts_score[:-1] += output_logit[:,1]
+                        utts_score[:-1] += output_logit[:,0]
                     elif self.use_regre:
                         utts_score[:-1] += output_logit[:,0]
 

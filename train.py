@@ -78,6 +78,7 @@ def cal_loss(preds, golds, classify_res, label, sims, trg_pad_idx, p, smoothing=
             if label is not None and sims is None:
                 classify_res = classify_res.squeeze(1)
                 BCE = nn.BCELoss(reduction='sum')
+                # BCE = nn.CrossEntropyLoss(reduction='sum')
                 bce_loss = BCE(classify_res, label)
                 mse_loss = 0.
             elif label is None and sims is not None:
@@ -412,7 +413,7 @@ def train(model, training_data, validation_data, optimizer, opt):
                   header=f"({header})", loss=loss, loss_wo_cover=loss_wo_cover, cover=cover, bce_loss = bce_loss, mse_loss = mse_loss,
                   accu=100*accu, elapse=(time.time()-start_time)/60))
 
-    # valid_accus = []
+    valid_accus = []
     valid_wo_cover_losses = []
     p = 0
     # sns.set()
@@ -431,7 +432,7 @@ def train(model, training_data, validation_data, optimizer, opt):
         print_performances('Validation', valid_loss, valid_loss_wo_cover, valid_cover, valid_bce_loss, valid_mse_loss, valid_accu, start)
 
         valid_wo_cover_losses += [valid_loss_wo_cover]
-        # valid_accus += [valid_accu]
+        valid_accus += [valid_accu]
 
         checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict()}
 
@@ -442,10 +443,14 @@ def train(model, training_data, validation_data, optimizer, opt):
             elif opt.save_mode == 'best':
                 # if epoch_i > 0 and os.path.exists(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1)):
                 #     os.remove(opt.save_model + 'save_best_{}.chkpt'.format(epoch_i-1))
-                model_name = opt.save_model + 'save_best.chkpt'
+                model_name1 = opt.save_model + 'save_best_validloss.chkpt'
+                model_name2 = opt.save_model + 'save_best_validaccu.chkpt'
                 # if valid_loss <= min(valid_losses):
                 if valid_loss_wo_cover <= min(valid_wo_cover_losses):
-                    torch.save(checkpoint, model_name)
+                    torch.save(checkpoint, model_name1)
+                if valid_accu >= max(valid_accus):
+                    torch.save(checkpoint, model_name2)
+
                     print('    - [Info] The checkpoint file has been updated.')
 
         if log_train_file and log_valid_file:
@@ -498,7 +503,7 @@ def main():
 
     parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
     parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.08.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
@@ -516,13 +521,15 @@ def main():
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-warmup','--n_warmup_steps', type=int, default=500000)
     # parser.add_argument('-warmup','--n_warmup_steps', type=int, default=350000)
+    parser.add_argument('-init_lr', type=float, default=10.0)
+
 
     parser.add_argument('-dropout', type=float, default=0.1)
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/cls_layers_0.08_sche50k_0.3mask_modify/")
-    parser.add_argument('-save_model', default="./save_model/cls_layers_0.08_sche50k_0.3mask_modify/")
+    parser.add_argument('-log', default="./logs/cls_layers_0.1_sche50k_0.3mask_gelubce_uttenc/")
+    parser.add_argument('-save_model', default="./save_model/cls_layers_0.1_sche50k_0.3mask_gelubce_uttenc/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -547,7 +554,7 @@ def main():
     parser.add_argument('-q_based', action='store_true')
     parser.add_argument('-use_bce', action='store_true')
     parser.add_argument('-use_regre', action='store_true')
-
+    parser.add_argument('-utt_encode', action='store_true')
 
 
 
@@ -601,7 +608,8 @@ def main():
         use_score_matrix=opt.use_score_matrix,
         q_based=opt.q_based,
         use_bce=opt.use_bce,
-        use_regre=opt.use_regre
+        use_regre=opt.use_regre,
+        utt_encode=opt.utt_encode
         ).to(device)
 
     for name, parameters in transformer.named_parameters():
@@ -610,7 +618,7 @@ def main():
 
     optimizer = ScheduledOptim(
         optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
-        10.0, opt.d_model, opt.n_warmup_steps)
+        opt.init_lr, opt.d_model, opt.n_warmup_steps)
     train(transformer, training_data, validation_data, optimizer, opt)
 
 

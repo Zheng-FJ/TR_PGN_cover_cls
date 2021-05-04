@@ -124,7 +124,8 @@ class Translator(nn.Module):
 
             output_logit = self.model.classify_layer(enc_utt_output)
             if self.use_bce:
-                predicted_label = torch.argmax(output_logit, dim = -1)
+                # predicted_label = torch.argmax(output_logit, dim = -1)
+                predicted_label = output_logit.squeeze(1)
             elif self.use_rgere:
                 predicted_label = None
 
@@ -132,7 +133,7 @@ class Translator(nn.Module):
             if self.use_score_matrix:
                 utts_score = torch.zeros([output_logit.shape[0] + 1], dtype = torch.float32).cuda()
                 if self.use_bce:
-                    utts_score[:-1] += output_logit[:,1]
+                    utts_score[:-1] += output_logit[:,0]
                 elif self.use_rgere:
                     utts_score[:-1] += output_logit[:,0]
 

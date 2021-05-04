@@ -504,6 +504,7 @@ def covert_loader_to_dataset(example_loader):
     all_labels = [ex.label for ex in example_loader]
     pad_to_same_length(all_labels)
     all_labels = torch.tensor(all_labels, dtype=torch.float32)
+    # all_labels = torch.tensor(all_labels, dtype=torch.long)
 
     all_sims = [ex.sim for ex in example_loader]
     pad_to_same_length(all_sims)
