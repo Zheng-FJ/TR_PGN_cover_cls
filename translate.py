@@ -47,6 +47,7 @@ def load_model(opt, device):
         q_based=model_opt.q_based,
         use_bce=model_opt.use_bce,
         use_regre=model_opt.use_regre).to(device)
+        # utt_encode=model_opt.utt_encode).to(device)
 
     model.load_state_dict(checkpoint['model'])
     print('[Info] Trained model state loaded.')

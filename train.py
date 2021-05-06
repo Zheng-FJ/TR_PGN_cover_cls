@@ -448,10 +448,10 @@ def train(model, training_data, validation_data, optimizer, opt):
                 # if valid_loss <= min(valid_losses):
                 if valid_loss_wo_cover <= min(valid_wo_cover_losses):
                     torch.save(checkpoint, model_name1)
+                    print('    - [Info] The validloss checkpoint file has been updated.')
                 if valid_accu >= max(valid_accus):
                     torch.save(checkpoint, model_name2)
-
-                    print('    - [Info] The checkpoint file has been updated.')
+                    print('    - [Info] The validaccu checkpoint file has been updated.')
 
         if log_train_file and log_valid_file:
             with open(log_train_file, 'a') as log_tf, open(log_valid_file, 'a') as log_vf:
@@ -528,8 +528,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/cls_layers_0.1_sche50k_0.3mask_gelubce_uttenc/")
-    parser.add_argument('-save_model', default="./save_model/cls_layers_0.1_sche50k_0.3mask_gelubce_uttenc/")
+    parser.add_argument('-log', default="./logs/cls_layers_0.1_sche50k_0.3mask_gelubce_uttencmask/")
+    parser.add_argument('-save_model', default="./save_model/cls_layers_0.1_sche50k_0.3mask_gelubce_uttencmask/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)

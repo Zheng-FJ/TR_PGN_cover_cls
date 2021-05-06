@@ -46,6 +46,7 @@ class Translator(nn.Module):
         self.q_based = model.q_based
         self.use_bce = model.use_bce
         self.use_rgere = model.use_regre
+        self.utt_encode = model.utt_encode
 
 
 
@@ -79,12 +80,24 @@ class Translator(nn.Module):
 
         return final_dist
 
-    def _utts_process(self, input_repre, sections, utt_num):
+    def _utts_process(self, input_repre, sections, utt_num, padding = False, utt_merge=False):
         b_s = input_repre.shape[0]
         size = input_repre.shape[1]
         emb_dim = input_repre.shape[2]
         total_utt_num = torch.sum(utt_num)
+        max_utt_num = torch.max(utt_num)
         res = torch.zeros([total_utt_num, emb_dim], dtype = torch.float32).cuda()
+        res1 = torch.zeros([b_s, max_utt_num, emb_dim], dtype=torch.float32).cuda() 
+
+        if utt_merge:
+            idx2 = 0
+            for i in range(b_s):
+                for utt in input_repre[i, :utt_num[i], :]:
+                    res[idx2] += utt
+                    idx2 += 1
+
+            return res
+
 
         idx = 0
         for i in range(b_s):
@@ -96,13 +109,23 @@ class Translator(nn.Module):
 
             splited_utt = torch.split(input_repre[i], section, dim=0)
             splited_utt = splited_utt[:-1]
-            for utt in splited_utt:
-                res[idx] += (utt[0, :])
-                idx += 1
-        # print(total_utt_num)
-        # print(res.shape)
-        # exit()
-        return res
+
+            if padding:        
+                idx1 = 0
+                for utt in splited_utt:
+                    res1[i, idx1] += utt[0, :]
+                    idx1 += 1
+            else:
+
+                for utt in splited_utt:
+                    res[idx] += (utt[0, :])
+                    idx += 1
+
+        if padding:
+            res1_mask = get_pad_mask(res1[:,:,0], pad_idx=0.0)
+            return res1, res1_mask
+        else:
+            return res
 
     def _get_init_state(self, src_seq, src_mask, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num):
         beam_size = self.beam_size
@@ -110,7 +133,15 @@ class Translator(nn.Module):
             = self.model.encoder(src_seq, src_mask, return_attns=self.use_pointer, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3)
 
         if self.use_cls_layers and article_lens is not None and utt_num is not None:
-            enc_utt_output = self._utts_process(enc_output, article_lens, utt_num)
+            # enc_utt_output = self._utts_process(enc_output, article_lens, utt_num)
+            ''' utterance encode '''
+            if self.utt_encode:
+                enc_utt_output, enc_utt_mask = self._utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
+                enc_utt_output = self.model.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=None, attn_mask3=None)
+                enc_utt_output = self._utts_process(enc_utt_output, article_lens, utt_num, padding=False, utt_merge=True)
+            else:
+                enc_utt_output  = self._utts_process(enc_output, article_lens, utt_num, padding=False, utt_merge=False)
+
             ''' Q_based'''
             if self.q_based:
                 enc_utt_output = torch.split(enc_utt_output,utt_num.cpu().numpy().tolist())

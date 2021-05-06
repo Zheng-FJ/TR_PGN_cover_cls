@@ -257,7 +257,13 @@ def utts_process(input_repre, sections, utt_num, padding = False, utt_merge=Fals
 
     if padding:
         res1_mask = get_pad_mask(res1[:,:,0], pad_idx=0.0)
-        return res1, res1_mask
+        res1_q_mask = torch.ones([b_s, res1.shape[1], res1.shape[1]], dtype=torch.long).cuda()
+        tmp2 = torch.ones([b_s, res1.shape[1]-1, res1.shape[1]-1], dtype=torch.long).cuda()
+        tmp3 = torch.eye(res1.shape[1]-1, dtype=torch.long).cuda().repeat([b_s, 1, 1])
+        res1_q_mask[:, 1:, 1:] -= tmp2
+        res1_q_mask[:, 1:, 1:] += tmp3
+
+        return res1, res1_mask, res1_q_mask
     else:
         return res
 
@@ -355,8 +361,8 @@ class Transformer(nn.Module):
 
                 ''' utterance encode '''
                 if self.utt_encode:
-                    enc_utt_output, enc_utt_mask = utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
-                    enc_utt_output = self.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=None, attn_mask3=None)
+                    enc_utt_output, enc_utt_mask, enc_utt_q_mask = utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
+                    enc_utt_output = self.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=enc_utt_q_mask, attn_mask3=None)
                     enc_utt_output = utts_process(enc_utt_output, article_lens, utt_num, padding=False, utt_merge=True)
                 else:
                     enc_utt_output  = utts_process(enc_output, article_lens, utt_num, padding=False, utt_merge=False)
