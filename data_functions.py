@@ -21,20 +21,22 @@ class TestTensorDataset(Dataset):
         *tensors (Tensor): tensors that have the same size of the first dimension.
     """
 
-    def __init__(self, *tensors, titles, oovs, labels):
+    def __init__(self, *tensors, titles, oovs, labels, qids):
         assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
         manager = Manager()
         self.tensors = manager.list(tensors)
         self.titles = titles
         self.oovs = oovs
         self.labels = labels
+        self.qids = qids
 
     def __getitem__(self, index):
         tensor = tuple(tensor[index] for tensor in self.tensors)
         title = self.titles[index]
         oov = self.oovs[index]
         label = self.labels[index]
-        return tensor, title, oov, label
+        qid = self.qids[index]
+        return tensor, title, oov, label, qid
 
     def __len__(self):
         return self.tensors[0].size(0)
@@ -55,7 +57,7 @@ class Example(object):
             self.article_oovs
             self.oov_len
     '''
-    def __init__(self, article, title, label, sim, utt_num, 
+    def __init__(self, qid, article, title, label, sim, utt_num, 
                  encoder_input, decoder_input, decoder_target,
                  encoder_input_with_oov, article_oovs, decoder_target_with_oov,
                  max_encoder_len, max_decoder_len, pad_idx=0, article_lens=None, mask_lens = None, use_utter_trunc=False,
@@ -63,6 +65,7 @@ class Example(object):
 
         # articles & titles
         assert len(decoder_input) == len(decoder_target)
+        self.qid = qid
         self.article = article  # str
         self.article_lens = article_lens #list
         self.mask_lens = mask_lens
@@ -114,13 +117,13 @@ class Example(object):
         else:
             return x
 
-def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label, sim, max_article_len, max_title_len,
+def from_sample_covert_example(qid, vocab, article, art_lens, mask_lens, title, label, sim, max_article_len, max_title_len,
                                use_pointer=False, print_details=False, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
     if 0 == len(title) or 0 == len(article):
         return None
 
-    if len(article) <= len(title):
-        return None
+    # if len(article) <= len(title):
+    #     return None
 
     #截断文章
     temp = 0
@@ -210,6 +213,7 @@ def from_sample_covert_example(vocab, article, art_lens, mask_lens, title, label
         decoder_target_with_oov = abstract2ids(title[1:], vocab, article_oovs)
 
     example = Example(
+        qid = qid,
         article = article,
         article_lens = article_lens,
         mask_lens = mask_lens,
@@ -274,89 +278,93 @@ def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size,
 
 
     for qid, prob, conv, tit in tqdm(zip(qids, problems, articles, titles)):
-        try:
-            # for qichedashi
-            label = labels_data[qid]
-            sim = sim_data[qid]
-            label = [1] + label
-            sim = [0.3] + sim
-            art = "车主说：" + prob + "|" + conv
-            #art_ = [jieba.lcut(line) for line in art_.split('|')] 
+        # try:
+        # for qichedashi
+        if type(conv) != str:
+            continue
+        label = labels_data[qid]
+        sim = sim_data[qid]
+        label = [1] + label
+        sim = [0.3] + sim
+        art = "车主说：" + prob + "|" + conv
+        #art_ = [jieba.lcut(line) for line in art_.split('|')] 
 
-            # pre-processing
-            art = list(art)
-            for i in range(len(art)-1):
-                if art[i] == '|' and art[i+1] not in ['车','技']:
-                    art[i] = '^'
-            art = ''.join(art)
-            art = art.replace('^','')
+        # pre-processing
+        art = list(art)
+        for i in range(len(art)-1):
+            if art[i] == '|' and art[i+1] not in ['车','技']:
+                art[i] = '^'
+        art = ''.join(art)
+        art = art.replace('^','')
 
-            art_ = art.split('|')
+        art_ = art.split('|')
 
-            #tokenize(whitespace)
-            art__ = ''
-            for line in art_:
-                line = list(line)
-                for c in line:
-                    if '\u4e00' <= c <= '\u9fa5': #中文范围
-                        art__ += ' ' + c + ' '
-                    elif c in punctuation:
-                        art__ += ' ' + c + ' '
-                    else:
-                        art__ += c
-                art__ += '|'
-            
-            art_ = art__
-            art_ = [line.strip().split() for line in art_.split('|')]
-            art_ = [line for line in art_ if line != []]
-
-            mask_lens = []
-            tmp_len = 0
-            for i in range(len(art_)-1):
-                if art_[i][0] == '技' and art_[i+1][0] == '车':
-                    tmp_len += len(art_[i][4:]) + 2
-                    mask_lens.append(tmp_len)
-                    tmp_len = 0
-                else:
-                    tmp_len += len(art_[i][4:]) + 2
-            tmp_len += len(art_[-1][4:]) + 2
-            mask_lens.append(tmp_len)
-            # print("mask_lens: ",mask_lens)
-            
-
-            art_ = [['<cls>'] + line[4:]+['<eou>'] for line in art_]
-            # print(art_)
-
-
-            art = []
-            art_lens = []
-            for line in art_:
-                art += line
-                art_lens.append(len(line))
-            #print("art: ",art)
-            # print("art_lens: ",art_lens)
-            # break
-
-
-            tit_ = ''
-            tit = list(tit)
-            for c in tit:
+        #tokenize(whitespace)
+        art__ = ''
+        for line in art_:
+            line = list(line)
+            for c in line:
                 if '\u4e00' <= c <= '\u9fa5': #中文范围
-                    tit_ += ' ' + c + ' '
+                    art__ += ' ' + c + ' '
                 elif c in punctuation:
-                    tit_ += ' ' + c + ' '
+                    art__ += ' ' + c + ' '
                 else:
-                    tit_ += c
-            tit = tit_.split(' ')
-            tit = [word for word in tit if word != '']
+                    art__ += c
+            art__ += '|'
+            
+        art_ = art__
+        art_ = [line.strip().split() for line in art_.split('|')]
+        art_ = [line for line in art_ if line != []]
+
+        mask_lens = []
+        tmp_len = 0
+        for i in range(len(art_)-1):
+            if art_[i][0] == '技' and art_[i+1][0] == '车':
+                tmp_len += len(art_[i][4:]) + 2
+                mask_lens.append(tmp_len)
+                tmp_len = 0
+            else:
+                tmp_len += len(art_[i][4:]) + 2
+        tmp_len += len(art_[-1][4:]) + 2
+        mask_lens.append(tmp_len)
+        # print("mask_lens: ",mask_lens)
+            
+
+        art_ = [['<cls>'] + line[4:]+['<eou>'] for line in art_]
+        # print(art_)
+
+
+        art = []
+        art_lens = []
+        for line in art_:
+            art += line
+            art_lens.append(len(line))
+        #print("art: ",art)
+        # print("art_lens: ",art_lens)
+        # break
+
+
+        tit_ = ''
+        tit = list(tit)
+        for c in tit:
+            if '\u4e00' <= c <= '\u9fa5': #中文范围
+                tit_ += ' ' + c + ' '
+            elif c in punctuation:
+                tit_ += ' ' + c + ' '
+            else:
+                tit_ += c
+        tit = tit_.split(' ')
+        tit = [word for word in tit if word != '']
 
 
 
-        except:
-            print('wrong line')
-            # continue
-            break
+        # except Exception as e:
+        #     print(e)
+        #     print('wrong line')
+        #     # continue
+        #     break
         example = from_sample_covert_example(
+            qid = qid,
             vocab=vocab,
             article=art,
             art_lens=art_lens,
@@ -372,12 +380,12 @@ def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size,
             use_user_mask=use_user_mask,
             use_turns_mask=use_turns_mask
         )
+
         if example != None:
             example_loader.append(example)
         if test_mode:
             if len(example_loader) == test_num:
                 break
-
 
     print("[INFO] all datas has been load...")
     print("[INFO] {} examples in total...".format(len(example_loader)))
@@ -610,6 +618,7 @@ def covert_test_loader_to_dataset(example_loader):
     titles = np.array([f.title for f in example_loader])
     oovs = np.array([f.article_oovs for f in example_loader])
     labels = np.array([f.label for f in example_loader])
+    qids = np.array([f.qid for f in example_loader])
 
 
     if example_loader[0].use_user_mask:
@@ -666,7 +675,7 @@ def covert_test_loader_to_dataset(example_loader):
     elif not example_loader[0].use_utter_trunc and example_loader[0].use_user_mask and not example_loader[0].use_turns_mask:    #user
         dataset = TestTensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
                                     all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov,
-                                    all_oov_len, all_max_encoder_lens, all_users, all_utt_num, all_article_lens, titles=titles, oovs=oovs, labels=labels)
+                                    all_oov_len, all_max_encoder_lens, all_users, all_utt_num, all_article_lens, titles=titles, oovs=oovs, labels=labels, qids=qids)
 
     elif not example_loader[0].use_utter_trunc and not example_loader[0].use_user_mask and example_loader[0].use_turns_mask:    #turns
         dataset = TestTensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
@@ -1191,7 +1200,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
     elif not use_utter_trunc and use_user_mask and not use_turns_mask:  #user
         (all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask, all_decoder_target, \
          all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len, all_max_encoder_lens, \
-         all_users, all_utt_num, all_article_lens), title, oov, labels = batch
+         all_users, all_utt_num, all_article_lens), title, oov, labels, qid = batch
         max_encoder_len = all_encoder_mask.sum(dim=-1).max()
         max_decoder_len = all_decoder_mask.sum(dim=-1).max()
 
@@ -1310,7 +1319,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
                         init_coverage,all_decoder_input,all_decoder_mask,all_decoder_target]
         model_input = [t.cuda() if t is not None else None for t in model_input]
 
-    return model_input, title, oov, labels
+    return model_input, title, oov, labels, qid
 
 
 

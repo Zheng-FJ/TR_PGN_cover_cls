@@ -152,56 +152,58 @@ def makeVocabdict(data_dir, vocab_dir, vocab_size):
 
 
     for ques, art, tit, in tqdm(zip(problems, articles, titles)):
-        try:
-            # for qichedashi
-            art = ques+"|"+art
-            art = list(art)
-            for i in range(len(art)-1):
-                if art[i] == '|' and art[i+1] not in ['车','技']:
-                    art[i] = '^'
-            art = ''.join(art)
-            art = art.replace('^','')
+        # try:
+        # for qichedashi
+        if type(art) != str:
+            continue
+        art = ques+"|"+art
+        art = list(art)
+        for i in range(len(art)-1):
+            if art[i] == '|' and art[i+1] not in ['车','技']:
+                art[i] = '^'
+        art = ''.join(art)
+        art = art.replace('^','')
 
-            art_ = art.split('|')
+        art_ = art.split('|')
 
-            art__ = ''
-            for line in art_:
-                line = list(line)
-                for c in line:
-                    if '\u4e00' <= c <= '\u9fa5': #中文范围
-                        art__ += ' ' + c + ' '
-                    elif c in punctuation:
-                        art__ += ' ' + c + ' '
-                    else:
-                        art__ += c
-
-            art_tokens = art__.split(' ')
-
-            tit_ = ''
-            tit = list(tit)
-            for c in tit:
+        art__ = ''
+        for line in art_:
+            line = list(line)
+            for c in line:
                 if '\u4e00' <= c <= '\u9fa5': #中文范围
-                    tit_ += ' ' + c + ' '
+                    art__ += ' ' + c + ' '
                 elif c in punctuation:
-                    tit_ += ' ' + c + ' '
+                    art__ += ' ' + c + ' '
                 else:
-                    tit_ += c
-            tit_tokens = tit_.split(' ')
+                    art__ += c
 
-            tokens = art_tokens + tit_tokens
+        art_tokens = art__.split(' ')
 
-            tokens = [t for t in tokens]  # 去掉句子开头结尾的空字符
-            tokens = [t for t in tokens if t != ""]  # 删除空行
+        tit_ = ''
+        tit = list(tit)
+        for c in tit:
+            if '\u4e00' <= c <= '\u9fa5': #中文范围
+                tit_ += ' ' + c + ' '
+            elif c in punctuation:
+                tit_ += ' ' + c + ' '
+            else:
+                tit_ += c
+        tit_tokens = tit_.split(' ')
+
+        tokens = art_tokens + tit_tokens
+
+        tokens = [t for t in tokens]  # 去掉句子开头结尾的空字符
+        tokens = [t for t in tokens if t != ""]  # 删除空行
 
 
-            for token in tokens:
-                if token not in vocab_counter:
-                    vocab_counter[token] = 1
-                else:
-                    vocab_counter[token] += 1
-        except:
-            print(art)
-            print(tit)
+        for token in tokens:
+            if token not in vocab_counter:
+                vocab_counter[token] = 1
+            else:
+                vocab_counter[token] += 1
+        # except:
+        #     print(art)
+        #     print(tit)
 
     with open(vocab_dir, 'w', encoding='utf-8') as writer:
         for word, count in vocab_counter.most_common(vocab_size):
@@ -215,8 +217,8 @@ def makeVocabdict(data_dir, vocab_dir, vocab_size):
 
 
 if __name__ == '__main__':
-    data_path = '/home/disk1/lyj2019/zfj2020/finished_csv_files/train.csv'
-    vocab_path = '/home/disk1/lyj2019/zfj2020/finished_csv_files/vocab'
+    data_path = './new_dataset/train/newtrain_lead.csv'
+    vocab_path = './new_dataset/vocab/lead_vocab'
     makeVocabdict(data_path, vocab_path, 50000)
     vocab = Vocab(vocab_path, 20000)
     print(vocab.id2word(193))

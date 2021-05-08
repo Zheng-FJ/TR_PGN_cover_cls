@@ -4,7 +4,10 @@ import torch
 import argparse
 from tqdm import tqdm
 import random
+import pandas as pd 
 import numpy as np
+import json 
+import collections
 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset, Dataset
 
@@ -46,7 +49,8 @@ def load_model(opt, device):
         use_score_matrix=model_opt.use_score_matrix,
         q_based=model_opt.q_based,
         use_bce=model_opt.use_bce,
-        use_regre=model_opt.use_regre).to(device)
+        use_regre=model_opt.use_regre,
+        ).to(device)
         # utt_encode=model_opt.utt_encode).to(device)
 
     model.load_state_dict(checkpoint['model'])
@@ -59,14 +63,14 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_0.1_sche40k_0.3mask_gelubce/save_best_validloss.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_topk_sche50k_0.3mask_gelubce/save_best_validloss.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/cls_layers_0.1_sche40k_0.3mask_gelubce/validloss_pred.txt',
+    parser.add_argument('-output', default='./results/cls_layers_topk_sche50k_0.3mask_gelubce/pred_validloss.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-beam_size', type=int, default=5)
@@ -109,7 +113,7 @@ def main():
     test_examples = get_example_loader(opt.test_path, opt.label_path, opt.sim_path, opt.vocab_path, opt.vocab_size,
                                         opt.max_article_len, opt.max_title_len,
                                         use_pointer=opt.use_pointer,
-                                        test_mode=opt.test_mode,
+                                        test_mode=opt.test_mode, test_num=10,
                                         use_utter_trunc=opt.use_utter_trunc, use_user_mask=opt.use_user_mask, use_turns_mask=opt.use_turns_mask)
     test_dataset = covert_test_loader_to_dataset(test_examples)
     test_sampler = SequentialSampler(test_dataset) # for training random shuffle
@@ -131,12 +135,14 @@ def main():
         ).cuda()
 
     with open(opt.output, 'w') as f:
+        # open('./new_dataset/valid/valid_pre_label.json','w') as f_label:
         hyps = []
         refs = []
         cls_score = []
+        # label_dict = collections.defaultdict(list)
         for batch in tqdm(test_dataloader, mininterval=2, desc='  - (Test)', leave=False):
             #print(' '.join(example.src))
-            model_inputs, titles, oovs, labels = from_test_batch_get_model_input(batch, opt.hidden_dim, use_pointer=opt.use_pointer,use_utter_trunc=opt.use_utter_trunc, use_user_mask=opt.use_user_mask, use_turns_mask=opt.use_turns_mask)
+            model_inputs, titles, oovs, labels, qid = from_test_batch_get_model_input(batch, opt.hidden_dim, use_pointer=opt.use_pointer,use_utter_trunc=opt.use_utter_trunc, use_user_mask=opt.use_user_mask, use_turns_mask=opt.use_turns_mask)
             # print(titles)
             # print(oovs)
             src_seq = model_inputs[0].cuda()
@@ -161,11 +167,12 @@ def main():
                 predicted_label =  predicted_label.cpu().numpy().tolist()
                 pre = []
                 for line in predicted_label:
-                    if line > 0.5:
+                    if line >= 0.5:
                         pre.append(1)
                     else:
                         pre.append(0)
                 predicted_label = pre
+                # label_dict[qid[0]] = predicted_label
 
                 gold_label = []
                 for x in labels:
@@ -177,6 +184,7 @@ def main():
                     if predicted_label[i] == gold_label[i]:
                         corr += 1
                 cls_score.append(corr / length)
+                # cls_score = [0.0]
             else:
                 cls_score = [0.0]
 
@@ -198,6 +206,8 @@ def main():
             #print(pred_line)
             #print(' '.join([tk[0] for tk in titles]))
             f.write(pred_line.strip() + '\t' + '|'+ '\t' + gold_line +'\n')
+        # print('[Info] writing to json...')
+        # json.dump(label_dict, f_label)
     from rouge import Rouge
     rouge = Rouge()
     print(rouge.get_scores(hyps, refs, avg=True))

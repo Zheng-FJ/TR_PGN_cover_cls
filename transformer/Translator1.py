@@ -158,7 +158,7 @@ class Translator(nn.Module):
                 # predicted_label = torch.argmax(output_logit, dim = -1)
                 predicted_label = output_logit.squeeze(1)
             elif self.use_rgere:
-                predicted_label = None
+                predicted_label = output_logit.squeeze(1)
 
             ''' score_matrix '''
             if self.use_score_matrix:

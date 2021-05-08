@@ -102,6 +102,8 @@ def cal_loss(preds, golds, classify_res, label, sims, trg_pad_idx, p, smoothing=
             final_loss = torch.sum(final_loss) + Lambda * bce_loss
         elif label is None and sims is not None:
             final_loss = torch.sum(final_loss) + 0.2 * mse_loss
+        elif label is None and sims is None:
+            final_loss = torch.sum(final_loss)
        
         loss = torch.sum(loss)
 
@@ -501,11 +503,11 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-train_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/train.csv")
-    parser.add_argument('-valid_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/valid.csv")
+    parser.add_argument('-train_path', type=str, default="./new_dataset/train/newtrain_random.csv")
+    parser.add_argument('-valid_path', type=str, default="./new_dataset/valid/newvalid_random.csv")
     parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
-    parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
+    parser.add_argument("-vocab_path", type=str, default="./new_dataset/vocab/random_vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
     parser.add_argument('-epoch', type=int, default=100)
@@ -528,8 +530,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/cls_layers_0.1_sche50k_0.3mask_gelubce_uttencmask/")
-    parser.add_argument('-save_model', default="./save_model/cls_layers_0.1_sche50k_0.3mask_gelubce_uttencmask/")
+    parser.add_argument('-log', default="./logs/newtest_random/")
+    parser.add_argument('-save_model', default="./save_model/newtest_random/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -667,6 +669,7 @@ def prepare_dataloaders(opt):
                                         use_utter_trunc=opt.use_utter_trunc,
                                         use_user_mask=opt.use_user_mask,
                                         use_turns_mask=opt.use_turns_mask)
+
     train_dataset = covert_loader_to_dataset(train_examples)
     train_sampler = RandomSampler(train_dataset) # for training random shuffle
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
@@ -678,6 +681,7 @@ def prepare_dataloaders(opt):
                                         use_utter_trunc=opt.use_utter_trunc,
                                         use_user_mask=opt.use_user_mask,
                                         use_turns_mask=opt.use_turns_mask)
+
     valid_dataset = covert_loader_to_dataset(valid_examples)
     valid_sampler = SequentialSampler(valid_dataset) # for training random shuffle
     valid_dataloader = DataLoader(valid_dataset, sampler=valid_sampler, batch_size=batch_size)
