@@ -61,7 +61,7 @@ class Example(object):
                  encoder_input, decoder_input, decoder_target,
                  encoder_input_with_oov, article_oovs, decoder_target_with_oov,
                  max_encoder_len, max_decoder_len, pad_idx=0, article_lens=None, mask_lens = None, use_utter_trunc=False,
-                 use_user_mask=False, use_turns_mask = False, users=None):
+                 use_user_mask=False, use_turns_mask = False, users=None, print_attn=False):
 
         # articles & titles
         assert len(decoder_input) == len(decoder_target)
@@ -99,6 +99,8 @@ class Example(object):
         self.user_mask_ = None
         if self.use_user_mask == True:
             self.users = users
+        
+        self.print_attn = print_attn
 
     @classmethod
     def _add_pad_and_gene_mask(cls, x, max_len, pad_idx=0, return_mask=True):
@@ -118,7 +120,7 @@ class Example(object):
             return x
 
 def from_sample_covert_example(qid, vocab, article, art_lens, mask_lens, title, label, sim, max_article_len, max_title_len,
-                               use_pointer=False, print_details=False, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
+                               use_pointer=False, print_details=False, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False, print_attn=False):
     if 0 == len(title) or 0 == len(article):
         return None
 
@@ -233,7 +235,8 @@ def from_sample_covert_example(qid, vocab, article, art_lens, mask_lens, title, 
         use_utter_trunc=use_utter_trunc,
         use_user_mask=use_user_mask,
         use_turns_mask=use_turns_mask,
-        users=users)
+        users=users, 
+        print_attn=print_attn)
 
     if print_details:
         print("encoder_input :[{}]".format(" ".join([str(i) for i in example.encoder_input])))
@@ -249,7 +252,7 @@ def from_sample_covert_example(qid, vocab, article, art_lens, mask_lens, title, 
     return example
 
 def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size, max_article_len,
-                       max_title_len, use_pointer, test_mode=False, test_num=100, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
+                       max_title_len, use_pointer, test_mode=False, test_num=100, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False, print_attn=False):
     assert os.path.exists(data_path)
 
     #TODO assume operating csv files
@@ -275,6 +278,8 @@ def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size,
 
     punctuation = ['。','，','？','！','、','；','：','“','”','‘','’','「','」',\
                     '『','』','（','）','[',']','【','】','——','~','《','》','<','>','/','\\','\\\\']
+    
+    selected_qid = ['Q165003', 'Q147020','Q174645', 'Q120796', 'Q153769','Q123210', 'Q172158','Q117476','Q134177','Q156503','Q146983']
 
 
     for qid, prob, conv, tit in tqdm(zip(qids, problems, articles, titles)):
@@ -282,6 +287,8 @@ def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size,
         # for qichedashi
         if type(conv) != str:
             continue
+        if qid in selected_qid:
+            print_attn = True
         label = labels_data[qid]
         sim = sim_data[qid]
         label = [1] + label
@@ -378,7 +385,8 @@ def get_example_loader(data_path, labels_path, sim_path, vocab_path, vocab_size,
             print_details=print_details,
             use_utter_trunc=use_utter_trunc,
             use_user_mask=use_user_mask,
-            use_turns_mask=use_turns_mask
+            use_turns_mask=use_turns_mask, 
+            print_attn=print_attn
         )
 
         if example != None:
@@ -615,6 +623,8 @@ def covert_test_loader_to_dataset(example_loader):
 
     all_utt_num = torch.tensor([ex.utt_num for ex in example_loader], dtype=torch.long)
 
+    all_print_attn = torch.tensor([ex.print_attn for ex in example_loader], dtype=torch.bool)
+
     titles = np.array([f.title for f in example_loader])
     oovs = np.array([f.article_oovs for f in example_loader])
     labels = np.array([f.label for f in example_loader])
@@ -675,7 +685,7 @@ def covert_test_loader_to_dataset(example_loader):
     elif not example_loader[0].use_utter_trunc and example_loader[0].use_user_mask and not example_loader[0].use_turns_mask:    #user
         dataset = TestTensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
                                     all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov,
-                                    all_oov_len, all_max_encoder_lens, all_users, all_utt_num, all_article_lens, titles=titles, oovs=oovs, labels=labels, qids=qids)
+                                    all_oov_len, all_max_encoder_lens, all_users, all_utt_num, all_article_lens, all_print_attn, titles=titles, oovs=oovs, labels=labels, qids=qids)
 
     elif not example_loader[0].use_utter_trunc and not example_loader[0].use_user_mask and example_loader[0].use_turns_mask:    #turns
         dataset = TestTensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
@@ -684,7 +694,7 @@ def covert_test_loader_to_dataset(example_loader):
 
     else:
         dataset = TestTensorDataset(all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,
-                              all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len, titles=titles, oovs=oovs)
+                              all_decoder_target, all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len, all_article_lens, all_print_attn, titles=titles, oovs=oovs, qids=qids)
     return dataset
 
 def from_batch_get_model_input(batch, hidden_dim, use_pointer=True, use_coverage=True, use_utter_trunc=False, use_user_mask=False, use_turns_mask=False):
@@ -1200,7 +1210,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
     elif not use_utter_trunc and use_user_mask and not use_turns_mask:  #user
         (all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask, all_decoder_target, \
          all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len, all_max_encoder_lens, \
-         all_users, all_utt_num, all_article_lens), title, oov, labels, qid = batch
+         all_users, all_utt_num, all_article_lens, all_print_attn), title, oov, labels, qid = batch
         max_encoder_len = all_encoder_mask.sum(dim=-1).max()
         max_decoder_len = all_decoder_mask.sum(dim=-1).max()
 
@@ -1236,7 +1246,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
         init_context_vec = torch.zeros((batch_size, 2 * hidden_dim), dtype=torch.float32)  # 注意数据格式是float
 
         model_input = [all_encoder_input, all_encoder_mask, all_encoder_input_with_oov, oov_zeros, init_context_vec,
-                       init_coverage, all_user_mask, all_decoder_input, all_decoder_mask, all_decoder_target, all_utt_num, all_article_lens]
+                       init_coverage, all_user_mask, all_decoder_input, all_decoder_mask, all_decoder_target, all_utt_num, all_article_lens, all_print_attn]
         model_input = [t.cuda() if t is not None else None for t in model_input]
 
     elif not use_utter_trunc and not use_user_mask and use_turns_mask:  #turns
@@ -1283,7 +1293,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
 
     else:
         (all_encoder_input, all_encoder_mask, all_decoder_input, all_decoder_mask,all_decoder_target,\
-        all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len), title, oov = batch
+        all_encoder_input_with_oov, all_decoder_target_with_oov, all_oov_len, all_article_lens, all_print_attn), title, oov, qid = batch
 
 
         max_encoder_len = all_encoder_mask.sum(dim=-1).max()
@@ -1316,7 +1326,7 @@ def from_test_batch_get_model_input(batch,hidden_dim, use_pointer=True, use_cove
 
 
         model_input = [all_encoder_input,all_encoder_mask,all_encoder_input_with_oov,oov_zeros,init_context_vec,\
-                        init_coverage,all_decoder_input,all_decoder_mask,all_decoder_target]
+                        init_coverage,all_decoder_input,all_decoder_mask,all_decoder_target, all_article_lens, all_print_attn]
         model_input = [t.cuda() if t is not None else None for t in model_input]
 
     return model_input, title, oov, labels, qid

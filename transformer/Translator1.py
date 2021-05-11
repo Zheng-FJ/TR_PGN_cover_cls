@@ -127,10 +127,12 @@ class Translator(nn.Module):
         else:
             return res
 
-    def _get_init_state(self, src_seq, src_mask, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num):
+    def _get_init_state(self, src_seq, src_mask, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num, print_attn):
         beam_size = self.beam_size
         enc_output, enc_slf_attn_list, enc_hidden_states \
             = self.model.encoder(src_seq, src_mask, return_attns=self.use_pointer, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3)
+        # print(enc_slf_attn_list[-1].shape)
+        # exit()
 
         if self.use_cls_layers and article_lens is not None and utt_num is not None:
             # enc_utt_output = self._utts_process(enc_output, article_lens, utt_num)
@@ -205,8 +207,10 @@ class Translator(nn.Module):
         gen_seq[:, 1] = best_k_idx[0]
         enc_output = enc_output.repeat(beam_size, 1, 1)
 
-
-        return enc_output, gen_seq, scores, predicted_label, score_matrix
+        if print_attn:
+            return enc_output, gen_seq, scores, predicted_label, score_matrix, enc_slf_attn_list[-1]
+        else:
+            return enc_output, gen_seq, scores, predicted_label, score_matrix, None
 
 
 
@@ -236,7 +240,7 @@ class Translator(nn.Module):
         return gen_seq, scores
 
 
-    def translate_sentence(self, src_seq, src_seq_with_oov_extend, oov_zero, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num):
+    def translate_sentence(self, src_seq, src_seq_with_oov_extend, oov_zero, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num, print_attn):
         # Only accept batch size equals to 1 in this function.
         # TODO: expand to batch operation.
         assert src_seq.size(0) == 1
@@ -249,7 +253,7 @@ class Translator(nn.Module):
 
         with torch.no_grad():
             src_mask = get_pad_mask(src_seq, src_pad_idx)
-            enc_output, gen_seq, scores, predicted_label, score_matrix = self._get_init_state(src_seq, src_mask, src_seq_with_oov_extend, oov_zero, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3, article_lens=article_lens, utt_num=utt_num)
+            enc_output, gen_seq, scores, predicted_label, score_matrix, attn = self._get_init_state(src_seq, src_mask, src_seq_with_oov_extend, oov_zero, attn_mask1=attn_mask1, attn_mask2=attn_mask2, attn_mask3=attn_mask3, article_lens=article_lens, utt_num=utt_num, print_attn=print_attn)
             #print("init_scores: ",scores)
 
             ans_idx = 0   # default
@@ -277,4 +281,4 @@ class Translator(nn.Module):
                     _, ans_idx = scores.div(seq_lens.float() ** alpha).max(0)
                     ans_idx = ans_idx.item()
                     break
-        return gen_seq[ans_idx][:seq_lens[ans_idx]].tolist(), predicted_label
+        return gen_seq[ans_idx][:seq_lens[ans_idx]].tolist(), predicted_label, attn

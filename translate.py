@@ -46,10 +46,10 @@ def load_model(opt, device):
         n_position=model_opt.max_article_len,
         use_pointer = model_opt.use_pointer, 
         use_cls_layers=model_opt.use_cls_layers,
-        use_score_matrix=model_opt.use_score_matrix,
-        q_based=model_opt.q_based,
-        use_bce=model_opt.use_bce,
-        use_regre=model_opt.use_regre,
+        # use_score_matrix=model_opt.use_score_matrix,
+        # q_based=model_opt.q_based,
+        # use_bce=model_opt.use_bce,
+        # use_regre=model_opt.use_regre,
         ).to(device)
         # utt_encode=model_opt.utt_encode).to(device)
 
@@ -63,16 +63,19 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_layers_topk_sche50k_0.3mask_gelubce/save_best_validloss.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/vanilla/save_best.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
     parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
+
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/cls_layers_topk_sche50k_0.3mask_gelubce/pred_validloss.txt',
+    parser.add_argument('-output', default='./results/test_attn_vinilla/pred.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
+    parser.add_argument('-attn_path', type=str, default="./results/test_attn_vinilla/attn.json")
+
     parser.add_argument('-beam_size', type=int, default=5)
     parser.add_argument('-hidden_dim', type=int, default=256)
     parser.add_argument('-max_article_len', type=int, default=300)
@@ -134,11 +137,12 @@ def main():
         use_pointer=opt.use_pointer
         ).cuda()
 
-    with open(opt.output, 'w') as f:
+    with open(opt.output, 'w') as f, open(opt.attn_path, 'w') as f_dict:
         # open('./new_dataset/valid/valid_pre_label.json','w') as f_label:
         hyps = []
         refs = []
         cls_score = []
+        attn_dict = collections.defaultdict(list)
         # label_dict = collections.defaultdict(list)
         for batch in tqdm(test_dataloader, mininterval=2, desc='  - (Test)', leave=False):
             #print(' '.join(example.src))
@@ -153,16 +157,32 @@ def main():
             # attn_mask3 = model_inputs[8]
             attn_mask3 = None
 
+            print_attn = model_inputs[-1]
+
             if opt.use_cls_layers:
                 article_lens = model_inputs[11]
                 utt_num = model_inputs[10]
             else:
-                article_lens = None
+                # article_lens = None
                 utt_num = None
+                article_lens = model_inputs[-2]
 
 
             #print("src: ",src_seq)
-            pred_seq, predicted_label = translator.translate_sentence(src_seq, src_seq_with_oovs, oov_zeros, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num)
+            pred_seq, predicted_label, attn = translator.translate_sentence(src_seq, src_seq_with_oovs, oov_zeros, attn_mask1, attn_mask2, attn_mask3, article_lens, utt_num, print_attn)
+            # case stuy --- print attention
+            if attn is not None:
+                attn = torch.mean(attn, dim=1)
+                attn = attn.squeeze(0).transpose(1,0)
+                section = article_lens.squeeze(0).cpu().numpy().tolist()
+                section = [line for line in section if line != 0]
+                attn = torch.split(attn, section)
+                attn = list(attn)
+                for i in range(len(attn)):
+                    attn[i] = torch.mean(attn[i])
+                    attn[i] = attn[i].cpu().numpy().tolist()
+                attn_dict[qid[0]] = attn
+            
             if predicted_label is not None:
                 predicted_label =  predicted_label.cpu().numpy().tolist()
                 pre = []
@@ -208,6 +228,7 @@ def main():
             f.write(pred_line.strip() + '\t' + '|'+ '\t' + gold_line +'\n')
         # print('[Info] writing to json...')
         # json.dump(label_dict, f_label)
+        json.dump(attn_dict, f_dict)
     from rouge import Rouge
     rouge = Rouge()
     print(rouge.get_scores(hyps, refs, avg=True))
