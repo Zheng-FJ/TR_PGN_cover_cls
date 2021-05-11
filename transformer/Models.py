@@ -276,7 +276,7 @@ class Transformer(nn.Module):
             d_word_vec=512, d_model=512, d_inner=2048,
             n_layers=6, n_head=8, d_k=64, d_v=64, dropout=0.1, n_position=200,
             trg_emb_prj_weight_sharing=True, emb_src_trg_weight_sharing=True,
-            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False, use_bce=False, use_regre=False, utt_encode=False):
+            use_pointer=False, use_cls_layers=False, use_score_matrix=False, q_based=False, use_bce=False, use_regre=False, utt_encode=False, qada=False):
 
         super().__init__()
 
@@ -345,6 +345,10 @@ class Transformer(nn.Module):
             n_layers=1, n_head=n_head, d_k=d_k, d_v=d_v,
             pad_idx=src_pad_idx, dropout=dropout, utt_encode=True)
 
+        self.qada = qada
+        if self.qada:
+            self.Wf = nn.Linear(d_model, d_model, bias=False)
+
 
     def forward(self, src_seq, trg_seq, src_seq_with_oov, oov_zero, attn_mask1, attn_mask2, attn_mask3, cover, article_lens, utt_num):
 
@@ -362,6 +366,18 @@ class Transformer(nn.Module):
                 ''' utterance encode '''
                 if self.utt_encode:
                     enc_utt_output, enc_utt_mask, enc_utt_q_mask = utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
+                    if self.qada:
+                        hq = enc_utt_output[:, 0, :].unsqueeze(1)
+                        Hu = self.Wf(enc_utt_output)
+                        lambdas = torch.sigmoid(torch.matmul(hq, Hu.transpose(1, 2)))
+                        lambdas = lambdas.transpose(1, 2)
+
+                        repeat_num = enc_utt_output.shape[1]
+                        Hq = hq.repeat(1, repeat_num, 1)
+
+                        enc_utt_output = lambdas*Hq + (1-lambdas)*enc_utt_output
+
+                        
                     enc_utt_output = self.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=enc_utt_q_mask, attn_mask3=None)
                     enc_utt_output = utts_process(enc_utt_output, article_lens, utt_num, padding=False, utt_merge=True)
                 else:

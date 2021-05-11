@@ -503,11 +503,11 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-train_path', type=str, default="./new_dataset/train/newtrain_random.csv")
-    parser.add_argument('-valid_path', type=str, default="./new_dataset/valid/newvalid_random.csv")
+    parser.add_argument('-train_path', type=str, default="/home/disk1/lyj2019/zfj2020/dataset/finished_csv_files/train.csv")
+    parser.add_argument('-valid_path', type=str, default="/home/disk1/lyj2019/zfj2020/dataset/finished_csv_files/valid.csv")
     parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
-    parser.add_argument("-vocab_path", type=str, default="./new_dataset/vocab/random_vocab")
+    parser.add_argument("-vocab_path", type=str, default="/home/disk1/lyj2019/zfj2020/dataset/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
     parser.add_argument('-epoch', type=int, default=100)
@@ -530,8 +530,8 @@ def main():
     parser.add_argument('-embs_share_weight', action='store_true')
     parser.add_argument('-proj_share_weight', action='store_true')
 
-    parser.add_argument('-log', default="./logs/newtest_random/")
-    parser.add_argument('-save_model', default="./save_model/newtest_random/")
+    parser.add_argument('-log', default="./logs/cls_0.1_sche50k_0.3mask_gelubce_uttenc_qada/")
+    parser.add_argument('-save_model', default="./save_model/cls_0.1_sche50k_0.3mask_gelubce_uttenc_qada/")
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-pad_idx', type=int, default=0)
@@ -557,6 +557,7 @@ def main():
     parser.add_argument('-use_bce', action='store_true')
     parser.add_argument('-use_regre', action='store_true')
     parser.add_argument('-utt_encode', action='store_true')
+    parser.add_argument('-qada', action='store_true')
 
 
 
@@ -611,7 +612,8 @@ def main():
         q_based=opt.q_based,
         use_bce=opt.use_bce,
         use_regre=opt.use_regre,
-        utt_encode=opt.utt_encode
+        utt_encode=opt.utt_encode,
+        qada = opt.qada
         ).to(device)
 
     for name, parameters in transformer.named_parameters():
