@@ -47,6 +47,7 @@ class Translator(nn.Module):
         self.use_bce = model.use_bce
         self.use_rgere = model.use_regre
         self.utt_encode = model.utt_encode
+        self.qada = model.qada
 
 
 
@@ -139,6 +140,17 @@ class Translator(nn.Module):
             ''' utterance encode '''
             if self.utt_encode:
                 enc_utt_output, enc_utt_mask = self._utts_process(enc_output, article_lens, utt_num, padding = True, utt_merge=False)
+                if self.qada:
+                    hq = enc_utt_output[:, 0, :].unsqueeze(1)
+                    Hu = self.model.Wf(enc_utt_output)
+                    lambdas = torch.sigmoid(torch.matmul(hq, Hu.transpose(1, 2)))
+                    lambdas = lambdas.transpose(1, 2)
+
+                    repeat_num = enc_utt_output.shape[1]
+                    Hq = hq.repeat(1, repeat_num, 1)
+
+                    enc_utt_output = lambdas*Hq + (1-lambdas)*enc_utt_output
+
                 enc_utt_output = self.model.utt_encoder(enc_utt_output, src_mask=enc_utt_mask, return_attns=False, attn_mask1=None, attn_mask2=None, attn_mask3=None)
                 enc_utt_output = self._utts_process(enc_utt_output, article_lens, utt_num, padding=False, utt_merge=True)
             else:

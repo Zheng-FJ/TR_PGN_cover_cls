@@ -46,12 +46,13 @@ def load_model(opt, device):
         n_position=model_opt.max_article_len,
         use_pointer = model_opt.use_pointer, 
         use_cls_layers=model_opt.use_cls_layers,
-        # use_score_matrix=model_opt.use_score_matrix,
-        # q_based=model_opt.q_based,
-        # use_bce=model_opt.use_bce,
-        # use_regre=model_opt.use_regre,
+        use_score_matrix=model_opt.use_score_matrix,
+        q_based=model_opt.q_based,
+        use_bce=model_opt.use_bce,
+        use_regre=model_opt.use_regre,
+        utt_encode=model_opt.utt_encode,
+        qada=model_opt.qada
         ).to(device)
-        # utt_encode=model_opt.utt_encode).to(device)
 
     model.load_state_dict(checkpoint['model'])
     print('[Info] Trained model state loaded.')
@@ -63,15 +64,15 @@ def main():
 
     parser = argparse.ArgumentParser(description='translate.py')
 
-    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/vanilla/save_best.chkpt")
+    parser.add_argument('-model', type=str, default="/home/disk2/zfj2020/workspace/emnlp2021/modified/TR_PGN_cover_cls/save_model/cls_0.1_sche50k_0.3mask_gelubce_uttenc_qada/save_best_validaccu.chkpt")
     parser.add_argument('-test_path', type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/test.csv")
-    parser.add_argument('-label_path', type=str, default="./rouge_result_topk.json")
+    parser.add_argument('-label_path', type=str, default="./rouge_result_0.1.json")
     parser.add_argument('-sim_path', type=str, default="./rouge_result_sim.json")
 
     parser.add_argument("-vocab_path", type=str, default="/home/disk2/zfj2020/workspace/dataset/qichedashi/finished_csv_files/vocab")
     parser.add_argument("-vocab_size", type=int, default=50000)
 
-    parser.add_argument('-output', default='./results/test_attn_vinilla/pred.txt',
+    parser.add_argument('-output', default='./results/cls_0.1_sche50k_0.3mask_gelubce_uttenc_qada/pred_validaccu.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-attn_path', type=str, default="./results/test_attn_vinilla/attn.json")
@@ -137,7 +138,8 @@ def main():
         use_pointer=opt.use_pointer
         ).cuda()
 
-    with open(opt.output, 'w') as f, open(opt.attn_path, 'w') as f_dict:
+    with open(opt.output, 'w') as f:
+        # open(opt.attn_path, 'w') as f_dict:
         # open('./new_dataset/valid/valid_pre_label.json','w') as f_label:
         hyps = []
         refs = []
@@ -228,7 +230,7 @@ def main():
             f.write(pred_line.strip() + '\t' + '|'+ '\t' + gold_line +'\n')
         # print('[Info] writing to json...')
         # json.dump(label_dict, f_label)
-        json.dump(attn_dict, f_dict)
+        # json.dump(attn_dict, f_dict)
     from rouge import Rouge
     rouge = Rouge()
     print(rouge.get_scores(hyps, refs, avg=True))
