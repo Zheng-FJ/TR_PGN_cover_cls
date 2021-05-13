@@ -109,3 +109,4 @@ templates/
 heatmaps/
 finished_csv_files/
 new_dataset/
+output_figure/
