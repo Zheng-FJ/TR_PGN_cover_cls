@@ -45,14 +45,14 @@ def plot_confusion_matrix(output_dir, cm, classes, normalize=False,
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "Q123210_8.png"))
+    plt.savefig(os.path.join(output_dir, "Q117476_8.png"))
 
 def main():
     input_file = './results/test_attn_vanilla/tokenattn8.json'
     output_dir = './output_figure/vanilla/'
     with open(input_file, 'r') as f_attn:
         attn_datas = json.load(f_attn)
-    cm = attn_datas['Q123210']
+    cm = attn_datas['Q117476']
     cm = np.array(cm)
 
     classes = [1,2,3,4]
